@@ -315,6 +315,16 @@ def main():
     print("SIZE:", SIZE)
     print("simd_width:", SIMD_WIDTH)
 
+    if len(argv()) != 2 or argv()[1] not in ["--elementwise",
+                                             "--tiled",
+                                             "--manual-vectorized",
+                                             "--vectorized",
+                                             "--benchmark"]:
+        raise Error(
+            "Usage: --elementwise | --tiled | --manual-vectorized |"
+            " --vectorized | --benchmark"
+        )
+
     if argv()[1] == "--elementwise":
         out_tensor = LayoutTensor[mut=True, dtype, layout](out.unsafe_ptr())
         elementwise_add[layout, dtype, SIMD_WIDTH, rank, SIZE](
@@ -423,8 +433,4 @@ def main():
         print(bench)
         print("Benchmarks completed!")
 
-    else:
-        print(
-            "Usage: --elementwise | --tiled | --manual-vectorized |"
-            " --vectorized | --benchmark"
-        )
+

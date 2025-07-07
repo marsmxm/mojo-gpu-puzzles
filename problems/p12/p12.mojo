@@ -84,7 +84,11 @@ fn prefix_sum_block_sum_phase[
 
 def main():
     with DeviceContext() as ctx:
+        if len(argv()) != 2 or argv()[1] not in ["--simple", "--block-boundary"]:
+            raise Error("Expected one command-line argument: '--simple' or '--block-boundary'")
+        
         use_simple = argv()[1] == "--simple"
+        
         size = SIZE if use_simple else SIZE_2
         num_blocks = (size + TPB - 1) // TPB
 

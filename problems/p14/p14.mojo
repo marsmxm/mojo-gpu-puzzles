@@ -64,8 +64,8 @@ fn matmul_tiled[
 ):
     local_row = thread_idx.y
     local_col = thread_idx.x
-    global_row = block_idx.y * TPB + local_row
-    global_col = block_idx.x * TPB + local_col
+    tiled_row = block_idx.y * TPB + thread_idx.y
+    tiled_col = block_idx.x * TPB + thread_idx.x
     # FILL ME IN (roughly 20 lines)
 
 
@@ -74,6 +74,8 @@ fn matmul_tiled[
 
 def main():
     with DeviceContext() as ctx:
+        if len(argv()) != 2 or argv()[1] not in ["--simple", "--single-block", "--tiled"]:
+            raise Error("Expected one argument: '--simple', '--single-block', or '--tiled'")
         size = SIZE_TILED if argv()[1] == "--tiled" else SIZE
         out = ctx.enqueue_create_buffer[dtype](size * size).enqueue_fill(0)
         inp1 = ctx.enqueue_create_buffer[dtype](size * size).enqueue_fill(0)
@@ -136,8 +138,6 @@ def main():
                 grid_dim=BLOCKS_PER_GRID_TILED,
                 block_dim=THREADS_PER_BLOCK_TILED,
             )
-        else:
-            raise Error("Invalid argument")
 
         ctx.synchronize()
 

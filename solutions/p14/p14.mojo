@@ -99,13 +99,6 @@ fn matmul_tiled[
     # Iterate over tiles to compute matrix product
     @parameter
     for tile in range((size + TPB - 1) // TPB):
-        # Reset shared memory tiles
-        if local_row < TPB and local_col < TPB:
-            a_shared[local_row, local_col] = 0
-            b_shared[local_row, local_col] = 0
-
-        barrier()
-
         # Load A tile - global row stays the same, col determined by tile
         if tiled_row < size and (tile * TPB + local_col) < size:
             a_shared[local_row, local_col] = a[
@@ -160,8 +153,10 @@ fn matmul_idiomatic_tiled[
 
     var acc: output.element_type = 0
 
-    alias load_a_layout = Layout.row_major(1, TPB)
-    alias load_b_layout = Layout.row_major(TPB, 1)
+    alias load_a_layout = Layout.row_major(1, TPB)  # Coalesced loading
+    alias load_b_layout = Layout.row_major(1, TPB)  # Coalesced loading
+    # Note: Both matrices stored in same orientation for correct matrix multiplication
+    # Transposed loading would be useful if B were pre-transposed in global memory
 
     @parameter
     for idx in range(size // TPB):  # Perfect division: 9 // 3 = 3 tiles
@@ -169,7 +164,7 @@ fn matmul_idiomatic_tiled[
         a_tile = a.tile[TPB, TPB](block_idx.y, idx)
         b_tile = b.tile[TPB, TPB](idx, block_idx.x)
 
-        # Asynchronously copy tiles to shared memory
+        # Asynchronously copy tiles to shared memory with consistent orientation
         copy_dram_to_sram_async[thread_layout=load_a_layout](a_shared, a_tile)
         copy_dram_to_sram_async[thread_layout=load_b_layout](b_shared, b_tile)
 
