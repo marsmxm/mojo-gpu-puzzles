@@ -54,6 +54,7 @@ alias SIZE_2 = 15
 alias BLOCKS_PER_GRID_2 = (2, 1)
 alias THREADS_PER_BLOCK_2 = (TPB, 1)
 alias EXTENDED_SIZE = SIZE_2 + 2  # up to 2 blocks
+alias layout2 = Layout.row_major(SIZE_2)
 alias extended_layout = Layout.row_major(EXTENDED_SIZE)
 
 
@@ -68,8 +69,27 @@ fn prefix_sum_local_phase[
     global_i = block_dim.x * block_idx.x + thread_idx.x
     local_i = thread_idx.x
     # FILL ME IN (roughly 20 lines)
-    
+    var shared = tb[dtype]().row_major[TPB]().shared().alloc()
+    if global_i < size:
+        shared[local_i] = a[global_i]
+    barrier()
 
+    if global_i < size:
+        var offset = 1
+        for i in range(Int(log2(Scalar[dtype](TPB)))):
+            var val: output.element_type = 0
+            if local_i >= offset:
+                val = shared[local_i - offset]
+            barrier()
+
+            if local_i >= offset:
+                shared[local_i] += val
+            barrier()
+            offset *= 2
+        
+        output[global_i] = shared[local_i]
+        if local_i == TPB - 1 or global_i == size - 1:
+            output[size + block_idx.x] = shared[local_i]
 
 # Kernel 2: Add block sums to their respective blocks
 fn prefix_sum_block_sum_phase[
@@ -77,6 +97,8 @@ fn prefix_sum_block_sum_phase[
 ](output: LayoutTensor[mut=False, dtype, layout], size: Int):
     global_i = block_dim.x * block_idx.x + thread_idx.x
     # FILL ME IN (roughly 3 lines)
+    if global_i < size and block_idx.x > 0:
+        output[global_i] += output[size + block_idx.x - 1]
     
 
 # ANCHOR_END: prefix_sum_complete
@@ -102,11 +124,12 @@ def main():
         with a.map_to_host() as a_host:
             for i in range(size):
                 a_host[i] = i
+            print("a:", a_host)
 
-        a_tensor = LayoutTensor[mut=False, dtype, layout](a.unsafe_ptr())
-
+        
         if use_simple:
-            out_tensor = LayoutTensor[mut=False, dtype, layout](
+            var a_tensor = LayoutTensor[mut=False, dtype, layout](a.unsafe_ptr())
+            var out_tensor = LayoutTensor[mut=False, dtype, layout](
                 out.unsafe_ptr()
             )
 
@@ -118,6 +141,7 @@ def main():
                 block_dim=THREADS_PER_BLOCK,
             )
         else:
+            var a_tensor = LayoutTensor[mut=False, dtype, layout2](a.unsafe_ptr())
             var out_tensor = LayoutTensor[mut=False, dtype, extended_layout](
                 out.unsafe_ptr()
             )
@@ -138,6 +162,9 @@ def main():
             # Note this is in contrast with using `barrier()` in the kernel
             # which is a synchronization point for all threads in the same block and not across blocks.
             ctx.synchronize()
+
+            with out.map_to_host() as out_host:
+                print("out after phase 1:", out_host)
 
             # Phase 2: Add block sums
             ctx.enqueue_function[prefix_sum_block_sum_phase[extended_layout]](

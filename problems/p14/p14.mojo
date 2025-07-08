@@ -26,6 +26,13 @@ fn naive_matmul[
     row = block_dim.y * block_idx.y + thread_idx.y
     col = block_dim.x * block_idx.x + thread_idx.x
     # FILL ME IN (roughly 6 lines)
+    if row < size and col < size:
+        var val: output.element_type = 0
+        @parameter
+        for i in range(size):
+            val += a[row, i] * b[i, col]
+        
+        output[row, col] = val
 
 
 # ANCHOR_END: naive_matmul
@@ -44,6 +51,24 @@ fn single_block_matmul[
     local_row = thread_idx.y
     local_col = thread_idx.x
     # FILL ME IN (roughly 12 lines)
+    var shared_a = tb[dtype]().row_major[size, size]().shared().alloc()
+    var shared_b = tb[dtype]().row_major[size, size]().shared().alloc()
+    if local_row < size and local_col < size:
+        shared_a[local_row, local_col] = a[row, col]
+    elif local_col < size:
+        shared_b[0, local_col] = b[0, local_col]
+    elif local_row < size:
+        shared_b[1, local_row] = b[1, local_row]
+    barrier()
+
+    if local_row < size and local_col < size:
+        var val: output.element_type = 0
+        @parameter
+        for i in range(size):
+            val += shared_a[local_row, i] * shared_b[i, local_col]
+        
+        output[local_row, local_col] = val
+
 
 
 # ANCHOR_END: single_block_matmul
@@ -67,15 +92,31 @@ fn matmul_tiled[
     tiled_row = block_idx.y * TPB + thread_idx.y
     tiled_col = block_idx.x * TPB + thread_idx.x
     # FILL ME IN (roughly 20 lines)
+    var shared_a = tb[dtype]().row_major[TPB, size]().shared().alloc().fill(0)
+    var shared_b = tb[dtype]().row_major[size, TPB]().shared().alloc().fill(0)
 
+    for k in range((size + TPB - 1) // TPB):
+        if tiled_row < size and local_col + k * TPB < size: 
+            shared_a[local_row, local_col + k * TPB] = a[tiled_row, local_col + k * TPB]
+        
+        if tiled_col < size and local_row + k * TPB < size:
+            shared_b[local_row + k * TPB, local_col] = b[local_row + k * TPB, tiled_col]
+    barrier()
+
+    if tiled_row < size and tiled_col < size:
+        var accu: output.element_type = 0
+        @parameter
+        for k in range(size):
+            accu += shared_a[local_row, k] * shared_b[k, local_col]
+
+        output[tiled_row, tiled_col] = accu
 
 # ANCHOR_END: matmul_tiled
 
-
 def main():
     with DeviceContext() as ctx:
-        if len(argv()) != 2 or argv()[1] not in ["--simple", "--single-block", "--tiled"]:
-            raise Error("Expected one argument: '--simple', '--single-block', or '--tiled'")
+        if len(argv()) != 2 or argv()[1] not in ["--naive", "--single-block", "--tiled"]:
+            raise Error("Expected one argument: '--naive', '--single-block', or '--tiled'")
         size = SIZE_TILED if argv()[1] == "--tiled" else SIZE
         out = ctx.enqueue_create_buffer[dtype](size * size).enqueue_fill(0)
         inp1 = ctx.enqueue_create_buffer[dtype](size * size).enqueue_fill(0)
