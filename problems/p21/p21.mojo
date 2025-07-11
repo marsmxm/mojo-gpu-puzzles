@@ -315,11 +315,13 @@ def main():
     print("SIZE:", SIZE)
     print("simd_width:", SIMD_WIDTH)
 
-    if len(argv()) != 2 or argv()[1] not in ["--elementwise",
-                                             "--tiled",
-                                             "--manual-vectorized",
-                                             "--vectorized",
-                                             "--benchmark"]:
+    if len(argv()) != 2 or argv()[1] not in [
+        "--elementwise",
+        "--tiled",
+        "--manual-vectorized",
+        "--vectorized",
+        "--benchmark",
+    ]:
         raise Error(
             "Usage: --elementwise | --tiled | --manual-vectorized |"
             " --vectorized | --benchmark"
@@ -432,5 +434,3 @@ def main():
 
         print(bench)
         print("Benchmarks completed!")
-
-

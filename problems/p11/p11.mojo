@@ -117,8 +117,14 @@ def main():
             for i in range(conv):
                 b_host[i] = i
 
-        if len(argv()) != 2 or argv()[1] not in ["--simple", "--block-boundary"]:
-            raise Error("Expected one command-line argument: '--simple' or '--block-boundary'")
+        if len(argv()) != 2 or argv()[1] not in [
+            "--simple",
+            "--block-boundary",
+        ]:
+            raise Error(
+                "Expected one command-line argument: '--simple' or"
+                " '--block-boundary'"
+            )
 
         if argv()[1] == "--simple":
             var out_tensor = LayoutTensor[mut=False, dtype, out_layout](
@@ -160,7 +166,6 @@ def main():
                 grid_dim=BLOCKS_PER_GRID_2,
                 block_dim=THREADS_PER_BLOCK_2,
             )
-
 
         ctx.synchronize()
         expected = ctx.enqueue_create_host_buffer[dtype](size).enqueue_fill(0)

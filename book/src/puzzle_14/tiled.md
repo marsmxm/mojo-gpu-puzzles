@@ -319,7 +319,22 @@ This implementation achieves high performance through:
 
 <div class="solution-explanation">
 
-The idiomatic tiled matrix multiplication leverages Mojo's LayoutTensor API and asynchronous memory operations for a beautifully clean implementation. With the \\((9 \times 9)\\) matrix size, we get perfect tiling that eliminates all boundary checks:
+The idiomatic tiled matrix multiplication leverages Mojo's LayoutTensor API and asynchronous memory operations for a beautifully clean implementation.
+
+**🔑 Key Point: This implementation performs standard matrix multiplication A × B using coalesced loading for both matrices.**
+
+**What this implementation does:**
+- **Matrix operation**: Standard \\(A \times B\\) multiplication (not \\(A \times B^T\\))
+- **Loading pattern**: Both matrices use `Layout.row_major(1, TPB)` for coalesced access
+- **Computation**: `acc += a_shared[local_row, k] * b_shared[k, local_col]`
+- **Data layout**: No transposition during loading - both matrices loaded in same orientation
+
+**What this implementation does NOT do:**
+- Does NOT perform \\(A \times B^T\\) multiplication
+- Does NOT use transposed loading patterns
+- Does NOT transpose data during copy operations
+
+With the \\((9 \times 9)\\) matrix size, we get perfect tiling that eliminates all boundary checks:
 
 1. **LayoutTensor tile API**
 
@@ -350,33 +365,40 @@ The idiomatic tiled matrix multiplication leverages Mojo's LayoutTensor API and 
    ```mojo
    alias load_a_layout = Layout.row_major(1, TPB)    # Coalesced loading
    alias load_b_layout = Layout.row_major(1, TPB)    # Coalesced loading
-   # Note: Both matrices stored in same orientation for correct matrix multiplication
-   # Transposed loading would be useful if B were pre-transposed in global memory
+   # Note: Both matrices use the same layout for standard A × B multiplication
    ```
 
-   These layouts optimize memory access patterns:
-   - `load_a_layout`: Each thread loads consecutive elements from the same row (**coalesced**)
-   - `load_b_layout`: Each thread loads consecutive elements from the same row (**coalesced**)
-   - **Key insight**: Thread layout determines cooperation during copy, not final data layout
+   **Memory Access Analysis for Current Implementation:**
 
-   **Memory Access Pattern Optimization:**
+   Both matrices use `Layout.row_major(1, TPB)` for coalesced loading from global memory:
+   - `load_a_layout`: Threads cooperate to load consecutive elements from matrix A rows
+   - `load_b_layout`: Threads cooperate to load consecutive elements from matrix B rows
+   - **Key insight**: Thread layout determines how threads cooperate during copy, not the final data layout
+
+   **Actual Computation Pattern (proves this is A × B):**
+
+   ```mojo
+   # This is the actual computation in the current implementation
+   acc += a_shared[local_row, k] * b_shared[k, local_col]
+
+   # This corresponds to: C[i,j] = Σ(A[i,k] * B[k,j])
+   # Which is standard matrix multiplication A × B
+   ```
+
+   **Why both matrices use the same coalesced loading pattern:**
 
    ```txt
-   Matrix multiplication access pattern:
-   Thread (i,j) computing C[i,j] = Σ(A[i,k] * B[k,j])
+   Loading tiles from global memory:
+   - Matrix A tile: threads load A[block_row, k], A[block_row, k+1], A[block_row, k+2]... (consecutive)
+   - Matrix B tile: threads load B[k, block_col], B[k, block_col+1], B[k, block_col+2]... (consecutive)
 
-   For warp threads computing same row i, different columns:
-   Thread 0: A[i,k] (broadcast) + B[k,0] (consecutive elements)
-   Thread 1: A[i,k] (broadcast) + B[k,1] (consecutive elements)
-   Thread 2: A[i,k] (broadcast) + B[k,2] (consecutive elements)
-
-   Result: Coalesced access for both A and B with Layout.row_major(1, TPB)
+   Both patterns are coalesced with Layout.row_major(1, TPB)
    ```
 
-   **Why both matrices use the same layout:**
-   - Matrix \\(A\\): Threads access same row, different columns → coalesced
-   - Matrix \\(B\\): Threads access same row, different columns → coalesced
-   - **No transpose needed** for standard matrix multiplication \\(A \times B\\)
+   **Three separate memory concerns:**
+   1. **Global-to-shared coalescing**: `Layout.row_major(1, TPB)` ensures coalesced global memory access
+   2. **Shared memory computation**: `a_shared[local_row, k] * b_shared[k, local_col]` avoids bank conflicts
+   3. **Matrix operation**: The computation pattern determines this is A × B, not A × B^T
 
 4. **Perfect tiling eliminates boundary checks**
 
@@ -418,28 +440,58 @@ This implementation shows how high-level abstractions can express complex GPU al
 | Shared memory | Manual initialization (defensive) | Managed by copy functions |
 | Code complexity | More verbose with explicit indexing | More concise with higher-level APIs |
 | Bounds checking | Multiple checks during loading and computing | Single defensive check at final write |
-| Matrix orientation | Both A and B in same orientation | Both A and B in same orientation |
+| Matrix orientation | Both A and B in same orientation (standard A × B) | Both A and B in same orientation (standard A × B) |
 | Performance | Explicit control over memory patterns | Optimized layouts with register bypass |
 
 The idiomatic approach is not just cleaner but also potentially more performant due to the use of specialized memory layouts and asynchronous operations.
 
-### When would transposed loading be useful?
+### Educational: When would transposed loading be useful?
 
-While this puzzle doesn't require transposed loading, the layout system's flexibility enables powerful optimizations in other scenarios:
+The current implementation does NOT use transposed loading. This section is purely educational to show what's possible with the layout system.
+
+**Current implementation recap:**
+- Uses `Layout.row_major(1, TPB)` for both matrices
+- Performs standard A × B multiplication
+- No data transposition during copy
+
+**Educational scenarios where you WOULD use transposed loading:**
+
+While this puzzle uses standard coalesced loading for both matrices, the layout system's flexibility enables powerful optimizations in other scenarios:
 
 ```mojo
 # Example: Loading pre-transposed matrix B^T to compute A × B
+# (This is NOT what the current implementation does)
 alias load_b_layout = Layout.row_major(TPB, 1)   # Load B^T with coalesced access
 alias store_b_layout = Layout.row_major(1, TPB)  # Store as B in shared memory
 copy_dram_to_sram_async[src_thread_layout=load_b_layout, dst_thread_layout=store_b_layout](b_shared, b_tile)
 ```
 
-**Use cases for transposed loading:**
+**Use cases for transposed loading (not used in this puzzle):**
 1. **Pre-transposed input matrices**: When \\(B\\) is already stored transposed in global memory
 2. **Different algorithms**: Computing \\(A^T \times B\\), \\(A \times B^T\\), or \\(A^T \times B^T\\)
 3. **Memory layout conversion**: Converting between row-major and column-major layouts
 4. **Avoiding transpose operations**: Loading data directly in the required orientation
 
+**Key distinction:**
+- **Current implementation**: Both matrices use `Layout.row_major(1, TPB)` for standard \\(A \times B\\) multiplication
+- **Transposed loading example**: Would use different layouts to handle pre-transposed data or different matrix operations
+
 This demonstrates Mojo's philosophy: providing low-level control when needed while maintaining high-level abstractions for common cases.
+
+---
+
+## Summary: Key takeaways
+
+**What the idiomatic tiled implementation actually does:**
+1. **Matrix Operation**: Standard A × B multiplication
+2. **Memory Loading**: Both matrices use `Layout.row_major(1, TPB)` for coalesced access
+3. **Computation Pattern**: `acc += a_shared[local_row, k] * b_shared[k, local_col]`
+4. **Data Layout**: No transposition during loading
+
+**Why this is optimal:**
+- **Coalesced global memory access**: `Layout.row_major(1, TPB)` ensures efficient loading
+- **Bank conflict avoidance**: Shared memory access pattern avoids conflicts
+- **Standard algorithm**: Implements the most common matrix multiplication pattern
+
 </div>
 </details>

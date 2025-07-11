@@ -115,8 +115,15 @@ fn matmul_tiled[
 
 def main():
     with DeviceContext() as ctx:
-        if len(argv()) != 2 or argv()[1] not in ["--naive", "--single-block", "--tiled"]:
-            raise Error("Expected one argument: '--naive', '--single-block', or '--tiled'")
+        if len(argv()) != 2 or argv()[1] not in [
+            "--naive",
+            "--single-block",
+            "--tiled",
+        ]:
+            raise Error(
+                "Expected one argument: '--naive', '--single-block', or"
+                " '--tiled'"
+            )
         size = SIZE_TILED if argv()[1] == "--tiled" else SIZE
         out = ctx.enqueue_create_buffer[dtype](size * size).enqueue_fill(0)
         inp1 = ctx.enqueue_create_buffer[dtype](size * size).enqueue_fill(0)
