@@ -2,10 +2,6 @@
 	"folders": [
 		{
 			"path": "."
-		},
-		{
-			"name": "mdlab",
-			"path": "../../mdlab"
 		}
 	],
 	"settings": {}
