@@ -23,11 +23,11 @@ torch = { version = "==2.7.1", index = "https://download.pytorch.org/whl/rocm6.3
 pytorch-triton-rocm = {version = "*", index = "https://download.pytorch.org/whl/rocm6.3" }
 
 [dependencies]
-python = ">=3.10,<3.13"
-max = "*"
-bash = ">=5.2.21,<6"
-manim = ">=0.18.1,<0.19"
-mdbook = ">=0.4.48,<0.5"
+python = ">=3.12.11,<3.13"
+max = ">=25.5.0.dev2025071605,<26"
+bash = ">=5.2.37,<6"
+manim = ">=0.19.0,<0.20"
+mdbook = ">=0.4.52,<0.5"
 pre-commit = ">=4.2.0,<5"
 
 [environments]

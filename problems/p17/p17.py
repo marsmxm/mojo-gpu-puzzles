@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 from max.driver import CPU, Accelerator, Device, Tensor
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from numpy.typing import NDArray
 

@@ -25,7 +25,48 @@ fn softmax_gpu_kernel[
     input: LayoutTensor[mut=False, dtype, layout],
 ):
     # FILL IN (roughly 31 lines)
-    ...
+    var global_i = block_dim.x * block_idx.x + thread_idx.x
+    var local_i = thread_idx.x
+
+    var shared = tb[dtype]().row_major[TPB]().shared().alloc().fill(0)
+    var shared_sum = tb[dtype]().row_major[TPB]().shared().alloc().fill(0)
+    var shared_max = tb[dtype]().row_major[TPB]().shared().alloc().fill(0)
+
+    if global_i < input_size:
+        shared[local_i] = input[global_i]
+        shared_max[local_i] = shared[local_i]
+
+    barrier()
+
+    var stride = TPB // 2
+    while stride > 0:
+        if local_i < stride:
+            if shared_max[local_i] < shared_max[local_i + stride]:
+                shared_max[local_i] = shared_max[local_i + stride]
+        barrier()
+        stride //= 2
+    
+    if local_i == 0:
+        print("shared max:", shared_max[0])
+    
+    if global_i < input_size:
+        shared[local_i] = exp(shared[local_i] - shared_max[0])
+        shared_sum[local_i] = shared[local_i]
+    
+    barrier()
+
+    stride = TPB // 2
+    while stride > 0:
+        if local_i < stride:
+            shared_sum[local_i] += shared_sum[local_i + stride]
+        barrier()
+        stride //= 2
+    
+    if local_i == 0:
+        print("shared sum:", shared_sum[0])
+
+    if global_i < input_size:
+        output[global_i] = shared[local_i] / shared_sum[0]
 
 
 # ANCHOR_END: softmax_gpu_kernel
@@ -41,7 +82,18 @@ fn softmax_cpu_kernel[
     input: LayoutTensor[dtype, layout, MutableAnyOrigin],
 ):
     # FILL IN (roughly 10 lines)
-    ...
+    var max_val: Scalar[dtype] = min_finite[dtype]()
+    for i in range(input_size):
+        max_val = max(max_val, rebind[Scalar[dtype]](input[i]))
+
+    var sum_exp: Scalar[dtype] = 0.0
+    for i in range(input_size):
+        var exp_val = rebind[Scalar[dtype]](exp(input[i] - max_val))
+        output[i] = exp_val
+        sum_exp += exp_val
+
+    for i in range(input_size):
+        output[i] = output[i] / sum_exp
 
 
 # ANCHOR_END: softmax_cpu_kernel
