@@ -24,7 +24,7 @@ pytorch-triton-rocm = {version = "*", index = "https://download.pytorch.org/whl/
 
 [dependencies]
 python = ">=3.12.11,<3.13"
-max = ">=25.5.0.dev2025071605,<26"
+max = ">=25.5.0.dev2025071705,<26"
 bash = ">=5.2.37,<6"
 manim = ">=0.19.0,<0.20"
 mdbook = ">=0.4.52,<0.5"
@@ -105,6 +105,10 @@ p15 = "mojo package problems/p15/op -o problems/p15/op.mojopkg && python problem
 p16-package = "mojo package problems/p16/op -o problems/p16/op.mojopkg"
 p16-test-kernels = { cmd = "mojo test problems/p16", depends-on = ["p16-package"] }
 p16 = { cmd = "python problems/p16/p16.py", depends-on = ["p16-package"] }
+
+p16-b-package = "mojo package problems/p16_bonus/op -o problems/p16_bonus/op.mojopkg"
+p16-b-test-kernels = { cmd = "mojo test problems/p16_bonus", depends-on = ["p16-b-package"] }
+p16-bonus = { cmd = "python problems/p16_bonus/p16.py", depends-on = ["p16-b-package"] }
 
 p17 = "mojo package problems/p17/op -o problems/p17/op.mojopkg && python problems/p17/p17.py"
 
