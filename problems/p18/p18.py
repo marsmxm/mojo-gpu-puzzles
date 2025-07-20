@@ -23,7 +23,7 @@ def conv1d_pytorch(input_tensor: torch.Tensor, kernel_tensor: torch.Tensor) -> t
     # Call our custom conv1d operation with explicit output tensor
     # The Mojo signature expects: (out, input, kernel)
     conv1d = ops.conv1d[{"input_size": input_tensor.shape[0], "conv_size": kernel_tensor.shape[0]}]
-
+    torch.compile(conv1d)(output_tensor, input_tensor, kernel_tensor)
     # FILL IN with 1 line of code
 
     return output_tensor
@@ -41,7 +41,7 @@ def conv1d_max_graph_reference(
     """
     from max.driver import CPU, Accelerator, Tensor, accelerator_count
     from max.dtype import DType
-    from max.engine import InferenceSession
+    from max.engine.api import InferenceSession
     from max.graph import DeviceRef, Graph, TensorType, ops
 
     # Use the same device logic as p15
