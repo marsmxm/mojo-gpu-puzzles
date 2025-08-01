@@ -12,6 +12,7 @@ from utils import StaticTuple
 
 alias TPB = 16
 alias dtype = DType.float32
+alias EPS = 1e-5
 
 
 # ANCHOR: matmul_idiomatic_tiled
@@ -101,6 +102,36 @@ fn layernorm_kernel[
     var sum_val: Scalar[dtype] = 0
     var sq_sum: Scalar[dtype] = 0
 
+    var shared_sum = tb[dtype]().row_major[hidden_dim]().shared().alloc().fill(0)
+    var shared_sq_sum = tb[dtype]().row_major[hidden_dim]().shared().alloc().fill(0)
+
+    var x = input[batch_idx, seq_idx, hidden_idx]
+    shared_sum[hidden_idx] = x
+    barrier()
+
+    var stride = hidden_dim // 2
+    while stride > 0:
+        shared_sum[hidden_idx] = shared_sum[hidden_idx] + shared_sum[hidden_idx + stride]
+        barrier()
+        stride //= 2
+
+    sum_val = rebind[Scalar[dtype]](shared_sum[0])
+    var mu = sum_val / hidden_dim
+
+    shared_sq_sum[hidden_idx] = (x - mu) * (x - mu)
+    barrier()
+
+    stride = hidden_dim // 2
+    while stride > 0:
+        shared_sq_sum[hidden_idx] = shared_sq_sum[hidden_idx] + shared_sq_sum[hidden_idx + stride]
+        barrier()
+        stride //= 2
+
+    sq_sum = rebind[Scalar[dtype]](shared_sq_sum[0])
+    var variance = sq_sum / hidden_dim
+
+    output[batch_idx, seq_idx, hidden_idx] = 
+        ln_weight[hidden_idx] * (x - mu) / sqrt(variance + EPS) + ln_bias[hidden_idx]
     # FILL ME IN (roughly 11 lines)
 
 
@@ -188,12 +219,12 @@ fn minimal_fused_kernel[
     hidden_dim: Int,
     output_dim: Int,
 ](
-    output: LayoutTensor[mut=True, dtype, output_layout],
-    input: LayoutTensor[mut=False, dtype, input_layout],
+    output: LayoutTensor[mut=True, dtype, output_layout], # (batch_size, seq_len, output_dim)
+    input: LayoutTensor[mut=False, dtype, input_layout],  # (batch_size, seq_len, hidden_dim)
     ln_weight: LayoutTensor[mut=False, dtype, ln_params_layout],
     ln_bias: LayoutTensor[mut=False, dtype, ln_params_layout],
-    linear_weight: LayoutTensor[mut=False, dtype, weight_layout],
-    linear_bias: LayoutTensor[mut=False, dtype, bias_layout],
+    linear_weight: LayoutTensor[mut=False, dtype, weight_layout], # (OUTPUT_DIM, HIDDEN_DIM)
+    linear_bias: LayoutTensor[mut=False, dtype, bias_layout], # (OUTPUT_DIM, 1)
 ):
     """Minimal fused kernel - one thread per sequence position to avoid redundancy.
     """
@@ -206,11 +237,38 @@ fn minimal_fused_kernel[
         return
 
     # Step 1: Compute LayerNorm statistics once per sequence position
+    var sum_val: Scalar[dtype] = 0
+    var sq_sum: Scalar[dtype] = 0
 
-    # FILL IN roughly 10 lines
+    var local = tb[dtype]().row_major[hidden_dim]().alloc().fill(0)
+
+    @parameter
+    for h in range(hidden_dim):
+        local[h] = input[batch_idx, seq_idx, h]
+        sum_val += rebind[Scalar[dtype]](local[h])
+        sq_sum += rebind[Scalar[dtype]](local[h] * local[h])
+
+    var mu = sum_val / hidden_dim
+    var variance = sq_sum / hidden_dim - 2 * mu * sum_val / hidden_dim + mu * mu
+
+    # @parameter
+    # for h in range(hidden_dim):
+    #     var val = rebind[Scalar[dtype]](local[h])
+    #     sq_sum += (val - mu) * (val - mu)
+
+    # var variance = sq_sum / hidden_dim
+    
+    @parameter
+    for h in range(hidden_dim):
+        local[h] = ln_weight[h] * (local[h] - mu) / sqrt(variance + EPS) + ln_bias[h]
 
     # Step 2: Compute all outputs for this sequence position
-
+    @parameter
+    for o in range(output_dim):
+        var o_val: Scalar[dtype] = 0
+        for h in range(hidden_dim):
+            o_val += rebind[Scalar[dtype]](linear_weight[o, h] * local[h] + linear_bias[o])
+        output[batch_idx, seq_idx, o] = o_val
     # FILL IN roughly 10 lines
 
 

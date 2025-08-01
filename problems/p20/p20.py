@@ -32,8 +32,8 @@ warnings.filterwarnings("ignore", message=".*mutated inputs.*")
 
 
 BATCH_SIZE = 4
-SEQ_LEN = 4
-HIDDEN_DIM = 8
+SEQ_LEN = 40
+HIDDEN_DIM = 80
 OUTPUT_DIM = 16
 EPS = 1e-5
 

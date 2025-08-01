@@ -46,9 +46,6 @@ fn embedding_kernel_coalesced[
     var remainder = global_idx % (seq_len * embed_dim)
     var seq = remainder // embed_dim
     var embed = remainder % embed_dim
-
-    if global_idx == 262144:
-        print("batch, seq, embed", batch, seq, embed)
         
     # Get token index
     # FILL IN 1 line
