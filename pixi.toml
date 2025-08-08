@@ -11,6 +11,7 @@ channels = ["nvidia"]
 
 [feature.cuda.dependencies]
 cuda-toolkit = "12.*" # for compute-sanitizer etc.
+cuda-gdb = "12.*"     # for GPU kernel debugging
 
 [feature.cuda.pypi-dependencies]
 torch = { version = "==2.7.1", index = "https://download.pytorch.org/whl/cu128" }
@@ -23,7 +24,7 @@ torch = { version = "==2.7.1", index = "https://download.pytorch.org/whl/rocm6.3
 pytorch-triton-rocm = {version = "*", index = "https://download.pytorch.org/whl/rocm6.3" }
 
 [dependencies]
-python = ">=3.10,<3.13"
+python = "==3.12"
 max = "*"  # includes `mojo-compiler`
 mojo = "*" # includes lsp, debugger, formatter etc.
 bash = ">=5.2.21,<6"
@@ -42,6 +43,10 @@ install-pre-commit = "pre-commit install"
 format = { cmd="mojo format problems solutions", depends-on = ["install-pre-commit"] }
 
 tests = { cmd = "bash solutions/run.sh" }
+
+# Fix conda cuda-gdb by linking to system CUDA installation
+setup-cuda-gdb = { cmd = "ln -sf /usr/local/cuda/bin/cuda-gdb-minimal $CONDA_PREFIX/bin/cuda-gdb-minimal && ln -sf /usr/local/cuda/bin/cuda-gdb-python3.12-tui $CONDA_PREFIX/bin/cuda-gdb-python3.12-tui", description = "Link system CUDA-GDB binaries to conda environment" }
+
 memcheck = { cmd = "bash solutions/sanitizer.sh memcheck" }
 racecheck = { cmd = "bash solutions/sanitizer.sh racecheck" }
 synccheck = { cmd = "bash solutions/sanitizer.sh synccheck" }
@@ -81,6 +86,8 @@ viz07 = "cd book/src/puzzle_07 && python puzzle_07_viz.py"
 p08 = "mojo problems/p08/p08.mojo"
 p08_layout_tensor = "mojo problems/p08/p08_layout_tensor.mojo"
 viz08 = "cd book/src/puzzle_08 && python puzzle_08_viz.py"
+
+p09 = "mojo problems/p09/p09.mojo"
 
 p11 = "mojo problems/p11/p11.mojo"
 p11_layout_tensor = "mojo problems/p11/p11_layout_tensor.mojo"

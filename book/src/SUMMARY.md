@@ -25,9 +25,12 @@
   - [🔰 Raw Memory Approach](./puzzle_08/raw.md)
   - [📐 LayoutTensor Version](./puzzle_08/layout_tensor.md)
 
-# Part II: Debugging GPU Programs
-- [Puzzle 9: GPU Debugging Workflow]()
-  - [The Mysterious Kernel Crash]()
+# Part II: 🐞 Debugging GPU Programs
+- [Puzzle 9: GPU Debugging Workflow](./puzzle_09/puzzle_09.md)
+  - [📚 Mojo GPU Debugging Essentials](./puzzle_09/essentials.md)
+  - [🧐 Detective Work: First Case](./puzzle_09/first_case.md)
+  - [🔍 Detective Work: Second Case](./puzzle_09/second_case.md)
+  - [🕵 Detective Work: Third Case](./puzzle_09/third_case.md)
 - [Puzzle 10: Memory Error Detection & Race Conditions with Sanitizers]()
   - [The Silent Data Corruption]()
   - [The Race Condition Mystery]()
