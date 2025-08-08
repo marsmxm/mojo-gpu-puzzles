@@ -5,6 +5,7 @@ from layout import Layout, LayoutTensor
 from sys import argv
 from testing import assert_equal, assert_almost_equal
 
+
 # ANCHOR: butterfly_pair_swap
 alias SIZE = WARP_SIZE
 alias BLOCKS_PER_GRID = (1, 1)
@@ -28,6 +29,9 @@ fn butterfly_pair_swap[
     global_i = block_dim.x * block_idx.x + thread_idx.x
 
     # FILL ME IN (4 lines)
+    var cur = input[global_i]
+    var pair = shuffle_xor(cur, 1)
+    output[global_i] = pair
 
 
 # ANCHOR_END: butterfly_pair_swap
@@ -50,6 +54,14 @@ fn butterfly_parallel_max[
     global_i = block_dim.x * block_idx.x + thread_idx.x
 
     # FILL ME IN (roughly 7 lines)
+    var cur = input[global_i]
+    var offset = WARP_SIZE // 2
+    while offset > 0:
+        var pair = shuffle_xor(cur, offset)
+        cur = max(cur, pair)
+        offset //= 2
+    
+    output[global_i] = cur
 
 
 # ANCHOR_END: butterfly_parallel_max
@@ -81,6 +93,19 @@ fn butterfly_conditional_max[
         min_val = current_val
 
         # FILL ME IN (roughly 11 lines)
+        var offset = WARP_SIZE // 2
+        while offset > 0:
+            var pair_max = shuffle_xor(current_val, offset)
+            var pair_min = shuffle_xor(min_val, offset)
+            current_val = max(current_val, pair_max)
+            min_val = min(min_val, pair_min)
+            offset //= 2
+
+        if lane % 2 == 0:
+            output[global_i] = current_val
+        else:
+            output[global_i] = min_val
+
 
 
 # ANCHOR_END: butterfly_conditional_max
@@ -115,6 +140,9 @@ fn warp_inclusive_prefix_sum[
     global_i = block_dim.x * block_idx.x + thread_idx.x
 
     # FILL ME IN (roughly 4 lines)
+    var current_val = rebind[Scalar[dtype]](input[global_i])
+    var scan_result = prefix_sum[exclusive=False](current_val)
+    output[global_i] = scan_result
 
 
 # ANCHOR_END: warp_inclusive_prefix_sum
@@ -150,6 +178,27 @@ fn warp_partition[
         current_val = input[global_i]
 
         # FILL ME IN (roughly 13 lines)
+        var left: Scalar[DType.int32] = 0
+        if current_val < pivot:
+            left = 1
+
+        var offset = WARP_SIZE // 2
+        while offset > 0:
+            left += shuffle_xor(left, offset)
+            offset //= 2
+
+        var left_idx: Scalar[DType.int32] = 0
+        var right_idx: Scalar[DType.int32] = 0
+        if current_val < pivot:
+            left_idx = 1
+            left_idx = prefix_sum[exclusive=True](left_idx)
+            output[Int(left_idx)] = current_val
+        else:
+            right_idx = 1
+            right_idx = prefix_sum[exclusive=True](right_idx) + left
+            output[Int(right_idx)] = current_val
+
+
 
 
 # ANCHOR_END: warp_partition

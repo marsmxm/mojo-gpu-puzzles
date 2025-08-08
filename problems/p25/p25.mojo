@@ -2,8 +2,10 @@ from gpu import thread_idx, block_idx, block_dim, lane_id
 from gpu.host import DeviceContext
 from gpu.warp import shuffle_down, broadcast, WARP_SIZE
 from layout import Layout, LayoutTensor
+from layout.tensor_builder import LayoutTensorBuild as tb
 from sys import argv
 from testing import assert_equal, assert_almost_equal
+from utils.numerics import min_finite
 
 # ANCHOR: neighbor_difference
 alias SIZE = WARP_SIZE
@@ -28,6 +30,15 @@ fn neighbor_difference[
     lane = lane_id()
 
     # FILL IN (roughly 7 lines)
+    var current_val = input[lane]
+    var next_val = shuffle_down(current_val, 1)
+    if lane < WARP_SIZE - 1:
+        current_val = next_val - current_val
+    else:
+        print("next_val:", next_val)
+        current_val = 0
+
+    output[lane] = current_val
 
 
 # ANCHOR_END: neighbor_difference
@@ -37,6 +48,41 @@ alias SIZE_2 = 64
 alias BLOCKS_PER_GRID_2 = (2, 1)
 alias THREADS_PER_BLOCK_2 = (WARP_SIZE, 1)
 alias layout_2 = Layout.row_major(SIZE_2)
+
+
+fn moving_average_3_real[
+    layout: Layout, size: Int
+](
+    output: LayoutTensor[mut=False, dtype, layout],
+    input: LayoutTensor[mut=False, dtype, layout],
+):
+    """
+    Compute 3-point moving average: output[i] = (input[i] + input[i+1] + input[i+2]) / 3
+    Uses shuffle_down with offsets 1 and 2 to access neighbors.
+    Works within warp boundaries across multiple blocks.
+    """
+    global_i = block_dim.x * block_idx.x + thread_idx.x
+    lane = lane_id()
+
+    # FILL IN (roughly 10 lines)
+    var current_val = input[global_i]
+    var next_1 = shuffle_down(current_val, 1)
+    var next_2 = shuffle_down(current_val, 2)
+
+    if lane < WARP_SIZE - 2:
+        current_val = (current_val + next_1 + next_2) / 3
+    elif lane < WARP_SIZE - 1:
+        if global_i < SIZE_2 - 2:
+            current_val = (current_val + next_1 + input[global_i + 2]) / 3
+        else:
+            current_val = (current_val + next_1) / 2
+    else:
+        if global_i < SIZE_2 - 2:
+            current_val = (current_val + input[global_i + 1] + input[global_i + 2]) / 3
+        elif global_i < SIZE_2 -1:
+            current_val = (current_val + input[global_i + 1]) / 2
+
+    output[global_i] = current_val
 
 
 fn moving_average_3[
@@ -54,6 +100,16 @@ fn moving_average_3[
     lane = lane_id()
 
     # FILL IN (roughly 10 lines)
+    var current_val = input[global_i]
+    var next_1 = shuffle_down(current_val, 1)
+    var next_2 = shuffle_down(current_val, 2)
+
+    if lane < WARP_SIZE - 2:
+        current_val = (current_val + next_1 + next_2) / 3
+    elif lane < WARP_SIZE - 1:
+        current_val = (current_val + next_1) / 2
+
+    output[global_i] = current_val
 
 
 # ANCHOR_END: moving_average_3
@@ -77,6 +133,19 @@ fn broadcast_shuffle_coordination[
         var scale_factor: output.element_type = 0.0
 
         # FILL IN (roughly 14 lines)
+        if lane == 0:
+            for i in range(4):
+                scale_factor += input[i]
+            scale_factor = scale_factor / 4
+        
+        scale_factor = broadcast(scale_factor)
+        var current = input[global_i]
+        var next = shuffle_down(current, 1)
+
+        if lane < WARP_SIZE - 1:
+            output[global_i] = scale_factor * (current + next)
+        else:
+            output[global_i] = scale_factor * current
 
 
 # ANCHOR_END: broadcast_shuffle_coordination
@@ -99,6 +168,11 @@ fn basic_broadcast[
         var broadcast_value: output.element_type = 0.0
 
         # FILL IN (roughly 10 lines)
+        if lane == 0:
+            for i in range(4):
+                broadcast_value += input[i]
+
+        output[global_i] = input[global_i] + broadcast(broadcast_value)
 
 
 # ANCHOR_END: basic_broadcast
@@ -121,6 +195,13 @@ fn conditional_broadcast[
         var decision_value: output.element_type = 0.0
 
         # FILL IN (roughly 10 lines)
+        if lane == 0:
+            decision_value = min_finite[dtype]()
+            for i in range(8):
+                if input[i] > decision_value:
+                    decision_value = rebind[Scalar[dtype]](input[i])
+
+        decision_value = broadcast(decision_value)
 
         current_input = input[global_i]
         threshold = decision_value / 2.0
@@ -239,6 +320,72 @@ def test_moving_average():
             # Verify results
             for i in range(SIZE_2):
                 assert_almost_equal(output_host[i], expected_buf[i], rtol=1e-5)
+
+    print("✅ Moving average test passed!")
+
+
+def test_moving_average_real():
+    with DeviceContext() as ctx:
+        # Create test data: [1, 2, 4, 7, 11, 16, 22, 29, ...]
+        input_buf = ctx.enqueue_create_buffer[dtype](SIZE_2).enqueue_fill(0)
+        output_buf = ctx.enqueue_create_buffer[dtype](SIZE_2).enqueue_fill(0)
+
+        with input_buf.map_to_host() as input_host:
+            input_host[0] = 1
+            for i in range(1, SIZE_2):
+                input_host[i] = input_host[i - 1] + i + 1
+
+        input_tensor = LayoutTensor[mut=False, dtype, layout_2](
+            input_buf.unsafe_ptr()
+        )
+        output_tensor = LayoutTensor[mut=False, dtype, layout_2](
+            output_buf.unsafe_ptr()
+        )
+
+        ctx.enqueue_function[moving_average_3_real[layout_2, SIZE_2]](
+            output_tensor,
+            input_tensor,
+            grid_dim=BLOCKS_PER_GRID_2,
+            block_dim=THREADS_PER_BLOCK_2,
+        )
+
+        expected_buf = ctx.enqueue_create_host_buffer[dtype](
+            SIZE_2
+        ).enqueue_fill(0)
+        ctx.synchronize()
+
+        # Create expected results
+        with input_buf.map_to_host() as input_host:
+            for block in range(BLOCKS_PER_GRID_2[0]):
+                warp_start = block * WARP_SIZE
+                warp_end = min(warp_start + WARP_SIZE, SIZE_2)
+
+                for i in range(warp_start, warp_end):
+                    lane = i % WARP_SIZE
+                    if i < SIZE_2 - 2:
+                        # 3-point average within warp
+                        expected_buf[i] = (
+                            input_host[i]
+                            + input_host[i + 1]
+                            + input_host[i + 2]
+                        ) / 3.0
+                    elif i < SIZE_2 - 1:
+                        # 2-point average
+                        expected_buf[i] = (
+                            input_host[i] + input_host[i + 1]
+                        ) / 2.0
+                    else:
+                        # Single value
+                        expected_buf[i] = input_host[i]
+
+        with output_buf.map_to_host() as output_host:
+            print("output:", output_host)
+            print("expected:", expected_buf)
+
+            # Verify results
+            for i in range(SIZE_2):
+                var msg = "not equal," + String(i)
+                assert_almost_equal(output_host[i], expected_buf[i], rtol=1e-5, msg=msg)
 
     print("✅ Moving average test passed!")
 
@@ -424,6 +571,9 @@ def main():
     elif test_type == "--average":
         print("SIZE_2: ", SIZE_2)
         test_moving_average()
+    elif test_type == "--average-real":
+        print("SIZE_2: ", SIZE_2)
+        test_moving_average_real()
     elif test_type == "--broadcast-basic":
         print("SIZE: ", SIZE)
         test_basic_broadcast()

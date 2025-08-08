@@ -40,8 +40,23 @@ fn softmax_cpu_kernel[
     output: LayoutTensor[dtype, layout, MutableAnyOrigin],
     input: LayoutTensor[dtype, layout, MutableAnyOrigin],
 ):
+    var max_x = min_finite[dtype]()
     # FILL IN (roughly 10 lines)
-    ...
+    @parameter
+    for i in range(input_size):
+        if input[i] > max_x:
+            max_x = rebind[Scalar[dtype]](input[i])
+
+    var sum_e: Scalar[dtype] = 0
+    @parameter
+    for i in range(input_size):
+        var e = rebind[Scalar[dtype]](exp(input[i] - max_x))
+        output[i] = e
+        sum_e += e
+
+    @parameter
+    for i in range(input_size):
+        output[i] = output[i] / sum_e
 
 
 # ANCHOR_END: softmax_cpu_kernel

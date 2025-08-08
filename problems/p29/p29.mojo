@@ -54,18 +54,41 @@ fn multi_stage_image_blur_pipeline[
     # Stage 1: Load and preprocess (threads 0-127)
 
     # FILL ME IN (roughly 10 lines)
+    if local_i < STAGE1_THREADS:
+        input_shared[local_i * 2] = input[global_i * 2] * 1.1
+        input_shared[local_i * 2 + 1] = input[global_i * 2 + 1] * 1.1
 
     barrier()  # Wait for Stage 1 completion
 
     # Stage 2: Apply blur (threads 128-255)
+    if local_i >= STAGE1_THREADS and local_i < STAGE1_THREADS + STAGE2_THREADS:
+        @parameter
+        for i in range(2):
+            var elem = (local_i - STAGE1_THREADS) * 2 + i
+            var count: Scalar[dtype] = 0
+            var s: Scalar[dtype] = 0
+            @parameter
+            for k in range(-2, 3):
+                if elem + k >= 0 and elem + k < TPB:
+                    count += 1
+                    s += rebind[Scalar[dtype]](input_shared[elem])
+            input_shared[elem] = s / count
 
-    # FILL ME IN (roughly 25 lines)
+
 
     barrier()  # Wait for Stage 2 completion
 
     # Stage 3: Final smoothing (all threads)
 
+
     # FILL ME IN (roughly 7 lines)
+    if local_i == 0:
+        input_shared[local_i] = (input_shared[local_i] + input_shared[local_i + 1]) * 0.6
+    elif local_i == TPB - 1:
+        input_shared[local_i] = (input_shared[local_i] + input_shared[local_i - 1]) * 0.6
+    else:
+        input_shared[local_i] = ((input_shared[local_i] + input_shared[local_i - 1]) * 0.6 + input_shared[local_i + 1]) * 0.6
+    output[global_i] = input_shared[local_i]
 
     barrier()  # Ensure all writes complete
 

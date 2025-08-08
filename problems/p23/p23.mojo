@@ -33,7 +33,9 @@ fn elementwise_add[
     ](indices: IndexList[rank]) capturing -> None:
         idx = indices[0]
         print("idx:", idx)
-        # FILL IN (2 to 4 lines)
+        a_simd = a.load[simd_width](idx, 0)
+        b_simd = b.load[simd_width](idx, 0)
+        output.store[simd_width](idx, 0, a_simd + b_simd)
 
     elementwise[add, SIMD_WIDTH, target="gpu"](a.size(), ctx)
 
@@ -64,12 +66,18 @@ fn tiled_elementwise_add[
         simd_width: Int, rank: Int
     ](indices: IndexList[rank]) capturing -> None:
         tile_id = indices[0]
-        print("tile_id:", tile_id)
+        print("tile_id:", tile_id, "simd_width:", simd_width)
         out_tile = output.tile[tile_size](tile_id)
         a_tile = a.tile[tile_size](tile_id)
         b_tile = b.tile[tile_size](tile_id)
 
         # FILL IN (6 lines at most)
+        @parameter
+        for i in range(tile_size // SIMD_WIDTH):
+            a_vec = a_tile.load[SIMD_WIDTH](i * SIMD_WIDTH, 0)
+            b_vec = b_tile.load[SIMD_WIDTH](i * SIMD_WIDTH, 0)
+            ret = a_vec + b_vec
+            out_tile.store[SIMD_WIDTH](i * SIMD_WIDTH, 0, ret)
 
     num_tiles = (size + tile_size - 1) // tile_size
     elementwise[process_tiles, 1, target="gpu"](num_tiles, ctx)
@@ -108,6 +116,16 @@ fn manual_vectorized_tiled_elementwise_add[
         b_tile = b.tile[chunk_size](tile_id)
 
         # FILL IN (7 lines at most)
+        @parameter
+        for i in range(tile_size):
+            global_start = tile_id * chunk_size + i * simd_width
+
+            a_vec = a.load[simd_width](global_start, 0)
+            b_vec = b.load[simd_width](global_start, 0)
+            ret = a_vec + b_vec
+            # print("tile:", tile_id, "simd_group:", i, "global_start:", global_start, "a_vec:", a_vec, "b_vec:", b_vec, "result:", ret)
+
+            output.store[simd_width](global_start, 0, ret)
 
     # Number of tiles needed: each tile processes chunk_size elements
     num_tiles = (size + chunk_size - 1) // chunk_size
@@ -156,6 +174,14 @@ fn vectorize_within_tiles_elementwise_add[
         )
 
         # FILL IN (9 lines at most)
+        @parameter
+        fn f[width: Int](i: Int) capturing -> None:
+            var global_i = tile_start + i
+            print("storing", width, "els at pos", global_i)
+            var ret = a.load[width](global_i, 0) + b.load[width](global_i, 0)
+            output.store[width](global_i, 0, ret)
+        
+        vectorize[f, simd_width](actual_tile_size)
 
     num_tiles = (size + tile_size - 1) // tile_size
     elementwise[
