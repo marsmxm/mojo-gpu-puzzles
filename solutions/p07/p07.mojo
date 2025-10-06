@@ -31,6 +31,14 @@ def main():
             SIZE * SIZE
         ).enqueue_fill(1)
         a = ctx.enqueue_create_buffer[dtype](SIZE * SIZE).enqueue_fill(1)
+
+        with a.map_to_host() as a_host:
+            for j in range(SIZE):
+                for i in range(SIZE):
+                    k = j * SIZE + i
+                    a_host[k] = k
+                    expected[k] = k + 10
+
         ctx.enqueue_function[add_10_blocks_2d](
             out.unsafe_ptr(),
             a.unsafe_ptr(),
@@ -41,13 +49,9 @@ def main():
 
         ctx.synchronize()
 
-        for y in range(SIZE):
-            for x in range(SIZE):
-                expected[y * SIZE + x] += 10
-
         with out.map_to_host() as out_host:
             print("out:", out_host)
             print("expected:", expected)
-            for y in range(SIZE):
-                for x in range(SIZE):
-                    assert_equal(out_host[y * SIZE + x], expected[y * SIZE + x])
+            for i in range(SIZE):
+                for j in range(SIZE):
+                    assert_equal(out_host[i * SIZE + j], expected[i * SIZE + j])

@@ -2,7 +2,7 @@
 
 ## Overview
 
-After mastering **elementwise**, **tiled**, **manual vectorization**, and **Mojo vectorize** patterns, it's time to measure their actual performance. This guide explains how to use the built-in benchmarking system in `p21.mojo` to scientifically compare these approaches and understand their performance characteristics.
+After learning **elementwise**, **tiled**, **manual vectorization**, and **Mojo vectorize** patterns, it's time to measure their actual performance. Here's how to use the built-in benchmarking system in `p21.mojo` to scientifically compare these approaches and understand their performance characteristics.
 
 > **Key insight:** _Theoretical analysis is valuable, but empirical benchmarking reveals the true performance story on your specific hardware._
 
@@ -12,20 +12,28 @@ To execute the comprehensive benchmark suite:
 
 <div class="code-tabs" data-tab-group="package-manager">
   <div class="tab-buttons">
+    <button class="tab-button">pixi NVIDIA (default)</button>
+    <button class="tab-button">pixi AMD</button>
     <button class="tab-button">uv</button>
-    <button class="tab-button">pixi</button>
   </div>
   <div class="tab-content">
 
 ```bash
-uv run poe p23 --benchmark
+pixi run p23 --benchmark
 ```
 
   </div>
   <div class="tab-content">
 
 ```bash
-pixi run p23 --benchmark
+pixi run p23 --benchmark -e amd
+```
+
+  </div>
+  <div class="tab-content">
+
+```bash
+uv run poe p23 --benchmark
 ```
 
   </div>
@@ -36,7 +44,7 @@ Your output will show performance measurements for each pattern:
 ```txt
 SIZE: 1024
 simd_width: 4
-Running p21 GPU Benchmarks...
+Running P21 GPU Benchmarks...
 SIMD width: 4
 --------------------------------------------------------------------------------
 Testing SIZE=16, TILE=4
@@ -49,6 +57,7 @@ Testing SIZE=128, TILE=16
 Running elementwise_128_16
 Running tiled_128_16
 Running manual_vectorized_128_16
+--------------------------------------------------------------------------------
 Testing SIZE=128, TILE=16, Vectorize within tiles
 Running vectorized_128_16
 --------------------------------------------------------------------------------
@@ -57,22 +66,20 @@ Running elementwise_1M_1024
 Running tiled_1M_1024
 Running manual_vectorized_1M_1024
 Running vectorized_1M_1024
-----------------------------------------------------------
-| name                      | met (ms)           | iters |
-----------------------------------------------------------
-| elementwise_16_4          | 4.59953155         | 100   |
-| tiled_16_4                | 3.16459014         | 100   |
-| manual_vectorized_16_4    | 4.60563415         | 100   |
-| vectorized_16_4           | 3.15671539         | 100   |
-| elementwise_128_16        | 3.1611135375       | 80    |
-| tiled_128_16              | 3.1669656300000004 | 100   |
-| manual_vectorized_128_16  | 3.1609855625       | 80    |
-| vectorized_128_16         | 3.16142578         | 100   |
-| elementwise_1M_1024       | 11.338706742857143 | 70    |
-| tiled_1M_1024             | 12.044989871428571 | 70    |
-| manual_vectorized_1M_1024 | 15.749412314285713 | 70    |
-| vectorized_1M_1024        | 13.377229          | 100   |
-----------------------------------------------------------
+| name                      | met (ms)              | iters |
+| ------------------------- | --------------------- | ----- |
+| elementwise_16_4          | 0.0033248             | 100   |
+| tiled_16_4                | 0.00327392            | 100   |
+| manual_vectorized_16_4    | 0.0036169600000000002 | 100   |
+| vectorized_16_4           | 0.0037209599999999997 | 100   |
+| elementwise_128_16        | 0.00351999            | 100   |
+| tiled_128_16              | 0.00370431            | 100   |
+| manual_vectorized_128_16  | 0.0043696             | 100   |
+| vectorized_128_16         | 0.00378048            | 100   |
+| elementwise_1M_1024       | 0.03130143            | 100   |
+| tiled_1M_1024             | 0.6892189000000001    | 100   |
+| manual_vectorized_1M_1024 | 0.5923888             | 100   |
+| vectorized_1M_1024        | 0.1876688             | 100   |
 
 Benchmarks completed!
 ```
@@ -83,11 +90,11 @@ The benchmarking system uses Mojo's built-in `benchmark` module:
 
 ```mojo
 from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
-bench_config = BenchConfig(max_iters=10, min_warmuptime_secs=0.2)
+bench_config = BenchConfig(max_iters=10, num_warmup_iters=1)
 ```
 
 - **`max_iters=10`**: Up to 10 iterations for statistical reliability
-- **`min_warmuptime_secs=0.2`**: GPU warmup before measurement
+- **`num_warmup_iters=1`**: GPU warmup before measurement
 - Check out the [benchmark documentation](https://docs.modular.com/mojo/stdlib/benchmark/)
 
 ## Benchmarking implementation essentials
@@ -99,18 +106,19 @@ Each benchmark follows a streamlined pattern:
 ```mojo
 @parameter
 fn benchmark_pattern_parameterized[test_size: Int, tile_size: Int](mut b: Bencher) raises:
+    bench_ctx = DeviceContext()
+    # Setup: Create buffers and initialize data
+    # Prevent optimization: keep(out.unsafe_ptr())
+    # Synchronize: ctx.synchronize()
     @parameter
     fn pattern_workflow(ctx: DeviceContext) raises:
-        # Setup: Create buffers and initialize data
-        # Compute: Execute the algorithm being measured
-        # Prevent optimization: keep(out.unsafe_ptr())
-        # Synchronize: ctx.synchronize()
+      # Compute: Execute the algorithm being measured
 
-    bench_ctx = DeviceContext()
     b.iter_custom[pattern_workflow](bench_ctx)
 ```
 
 **Key phases:**
+
 1. **Setup**: Buffer allocation and data initialization
 2. **Computation**: The actual algorithm being benchmarked
 3. **Prevent optimization**: Critical for accurate measurement
@@ -152,18 +160,21 @@ The benchmark suite tests three scenarios to reveal performance characteristics:
 ### Performance characteristics by problem size
 
 **Small problems (SIZE=16):**
-- Launch overhead dominates (~3-4ms baseline)
+
+- Launch overhead dominates (~0.003ms baseline)
 - Thread count differences don't matter
-- Tiled/vectorize show lower overhead
+- Tiled/vectorize show slightly lower overhead
 
 **Medium problems (SIZE=128):**
-- Still overhead-dominated (~3.16ms for all)
+
+- Still overhead-dominated (~0.003ms for all)
 - Performance differences nearly disappear
 - Transitional behavior between overhead and computation
 
 **Large problems (SIZE=1M):**
+
 - Real algorithmic differences emerge
-- Memory bandwidth becomes primary factor
+- Impact of uncoalesced loads becomes apparent
 - Clear performance ranking appears
 
 ## What the data shows
@@ -174,29 +185,38 @@ Based on empirical benchmark results across different hardware:
 
 | Rank | Pattern | Typical time | Key insight |
 |------|---------|-------------|-------------|
-| 🥇 | **Elementwise** | ~11.3ms | Max parallelism wins for memory-bound ops |
-| 🥈 | **Tiled** | ~12.0ms | Good balance of parallelism + locality |
-| 🥉 | **Mojo vectorize** | ~13.4ms | Automatic optimization has overhead |
-| 4th | **Manual vectorized** | ~15.7ms | Complex indexing hurts simple operations |
+| 🥇 | **Elementwise** | ~0.03ms | Coalesced memory access wins for memory-bound ops |
+| 🥈 | **Mojo vectorize** | ~0.19ms | Uncoalesced memory access hurts performance |
+| 🥉 | **Manual vectorized** | ~0.59ms | Uncoalesced memory access and manual optimization reduces performance |
+| 4th | **Tiled** | ~0.69ms | Uncoalesced memory access, manual optimization without SIMD loads reduces performance further |
 
 ### Key performance insights
 
 > **For simple memory-bound operations:** Maximum parallelism (elementwise) outperforms complex memory optimizations at scale.
 
 **Why elementwise wins:**
+
 - **262,144 threads** provide excellent latency hiding
 - **Simple memory patterns** achieve good coalescing
 - **Minimal overhead** per thread
 - **Scales naturally** with GPU core count
 
+**Why tiled and vectorize are competitive:**
+
+- **Balanced approach** between parallelism and memory locality
+- **Automatic optimization** (vectorize) performs nearly as well as manual tiling
+- **Good thread utilization** without excessive complexity
+
 **Why manual vectorization struggles:**
+
 - **Only 256 threads** limit parallelism
 - **Complex indexing** adds computational overhead
 - **Cache pressure** from large chunks per thread
 - **Diminishing returns** for simple arithmetic
 
 **Framework intelligence:**
-- Automatic iteration count adjustment (70-100 iterations)
+
+- Automatic iteration count adjustment (91-100 iterations)
 - Statistical reliability across different execution times
 - Handles thermal throttling and system variation
 
@@ -206,10 +226,10 @@ Based on empirical benchmark results across different hardware:
 
 ```txt
 | name                     | met (ms)           | iters |
-| elementwise_1M_1024      | 11.338706742857143 | 70    |
+| elementwise_1M_1024      | 0.03130143         | 100   |
 ```
 
-- **`met (ms)`**: Total execution time for all iterations
+- **`met (ms)`**: Execution time for a single iteration
 - **`iters`**: Number of iterations performed
 - **Compare within problem size**: Same-size comparisons are most meaningful
 
@@ -218,12 +238,14 @@ Based on empirical benchmark results across different hardware:
 **Choose patterns based on empirical evidence:**
 
 **For production workloads:**
+
 - **Large datasets (>100K elements)**: Elementwise typically optimal
 - **Small/startup datasets (<1K elements)**: Tiled or vectorize for lower overhead
 - **Development speed priority**: Mojo vectorize for automatic optimization
 - **Avoid manual vectorization**: Complexity rarely pays off for simple operations
 
 **Performance optimization workflow:**
+
 1. **Profile first**: Measure before optimizing
 2. **Test at scale**: Small problems mislead about real performance
 3. **Consider total cost**: Include development and maintenance effort
@@ -257,6 +279,7 @@ Your results will vary based on:
 ## Best practices summary
 
 **Benchmarking workflow:**
+
 1. **Warm up GPU** before critical measurements
 2. **Run multiple iterations** for statistical significance
 3. **Test multiple problem sizes** to understand scaling
@@ -264,14 +287,15 @@ Your results will vary based on:
 5. **Compare like with like** (same problem size, same hardware)
 
 **Performance decision framework:**
+
 - **Start simple**: Begin with elementwise for memory-bound operations
 - **Measure don't guess**: Theoretical analysis guides, empirical data decides
-- **Scale matters**: Small problem performance doesn't predict large problem behavior
+- **Scale matters**: Small problem performance doesn't predict large problem behaviour
 - **Total cost optimization**: Balance development time vs runtime performance
 
 ## Next steps
 
-With benchmarking mastery:
+With benchmarking skills:
 
 - **Profile real applications**: Apply these patterns to actual workloads
 - **Advanced GPU patterns**: Explore reductions, convolutions, and matrix operations
@@ -280,18 +304,21 @@ With benchmarking mastery:
 
 💡 **Key takeaway**: Benchmarking transforms theoretical understanding into practical performance optimization. Use empirical data to make informed decisions about which patterns work best for your specific hardware and workload characteristics.
 
-## Looking Ahead: When you need more control
+## Looking ahead: when you need more control
 
 The functional patterns in Part V provide excellent performance for most workloads, but some algorithms require **direct thread communication**:
 
 ### **Algorithms that benefit from warp programming:**
+
 - **Reductions**: Sum, max, min operations across thread groups
 - **Prefix operations**: Cumulative sums, running maximums
 - **Data shuffling**: Reorganizing data between threads
 - **Cooperative algorithms**: Where threads must coordinate closely
 
 ### **Performance preview:**
+
 In Part VI, we'll revisit several algorithms from Part II and show how warp operations can:
+
 - **Simplify code**: Replace complex shared memory patterns with single function calls
 - **Improve performance**: Eliminate barriers and reduce memory traffic
 - **Enable new algorithms**: Unlock patterns impossible with pure functional approaches

@@ -8,7 +8,9 @@ mojo_kernels = Path(__file__).parent / "op"
 ops = CustomOpLibrary(mojo_kernels)
 
 
-def embedding_mojo_1d(indices: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
+def embedding_mojo_1d(
+    indices: torch.Tensor, weights: torch.Tensor
+) -> torch.Tensor:
     """1D coalesced embedding kernel"""
     batch_size, seq_len = indices.shape
     vocab_size, embed_dim = weights.shape
@@ -16,17 +18,27 @@ def embedding_mojo_1d(indices: torch.Tensor, weights: torch.Tensor) -> torch.Ten
     output = torch.empty(
         (batch_size, seq_len, embed_dim),
         dtype=weights.dtype,
-        device=weights.device
+        device=weights.device,
     )
 
     if indices.dtype != torch.int32:
         indices = indices.to(torch.int32)
 
-    embedding_op = ops.embedding[{"batch_size": batch_size, "seq_len": seq_len, "vocab_size": vocab_size, "embed_dim": embed_dim}]
+    embedding_op = ops.embedding[
+        {
+            "batch_size": batch_size,
+            "seq_len": seq_len,
+            "vocab_size": vocab_size,
+            "embed_dim": embed_dim,
+        }
+    ]
     embedding_op(output, indices, weights)
     return output
 
-def embedding_mojo_2d(indices: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
+
+def embedding_mojo_2d(
+    indices: torch.Tensor, weights: torch.Tensor
+) -> torch.Tensor:
     """2D non-coalesced embedding kernel"""
     batch_size, seq_len = indices.shape
     vocab_size, embed_dim = weights.shape
@@ -34,13 +46,20 @@ def embedding_mojo_2d(indices: torch.Tensor, weights: torch.Tensor) -> torch.Ten
     output = torch.empty(
         (batch_size, seq_len, embed_dim),
         dtype=weights.dtype,
-        device=weights.device
+        device=weights.device,
     )
 
     if indices.dtype != torch.int32:
         indices = indices.to(torch.int32)
 
-    embedding_op = ops.embedding_2d[{"batch_size": batch_size, "seq_len": seq_len, "vocab_size": vocab_size, "embed_dim": embed_dim}]
+    embedding_op = ops.embedding_2d[
+        {
+            "batch_size": batch_size,
+            "seq_len": seq_len,
+            "vocab_size": vocab_size,
+            "embed_dim": embed_dim,
+        }
+    ]
     embedding_op(output, indices, weights)
     return output
 
@@ -51,15 +70,20 @@ if __name__ == "__main__":
     print()
 
     batch_size, seq_len, vocab_size, embed_dim = 8, 512, 10000, 512
-    print(f"Configuration: B={batch_size}, L={seq_len}, V={vocab_size}, E={embed_dim}")
+    print(
+        f"Configuration: B={batch_size}, L={seq_len}, V={vocab_size},"
+        f" E={embed_dim}"
+    )
     print("-" * 60)
 
     torch.manual_seed(42)
-    indices = torch.randint(0, vocab_size, (batch_size, seq_len),
-                           device="cuda", dtype=torch.int32)
+    indices = torch.randint(
+        0, vocab_size, (batch_size, seq_len), device="cuda", dtype=torch.int32
+    )
 
-    embed_layer = torch.nn.Embedding(vocab_size, embed_dim,
-                                    device="cuda", dtype=torch.float32)
+    embed_layer = torch.nn.Embedding(
+        vocab_size, embed_dim, device="cuda", dtype=torch.float32
+    )
     weights = embed_layer.weight.data
 
     print("Testing Correctness...")

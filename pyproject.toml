@@ -1,15 +1,18 @@
 [project]
 name = "mojo-gpu-puzzles"
-version = "0.0.0"
+version = "1.0.0"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 dependencies = [
-    "max>=25.6.0.dev2025073105",
+    "mojo>=0.25.7.0.dev2025100107,<1.0.0",
+    "max>=25.7.0.dev2025100107",
     "poethepoet>=0.34.0",
+    "scipy>=1.15.3",
     "torch==2.7.1",
 ]
 
 [[tool.uv.index]]
+name = "modular-nightly"
 url = "https://dl.modular.com/public/nightly/python/simple/"
 prerelease = "allow"
 
@@ -19,11 +22,27 @@ url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 
 [tool.uv.sources]
+mojo = [
+  { index = "modular-nightly" },
+]
+max = [
+  { index = "modular-nightly" },
+]
+mblack = [
+  { index = "modular-nightly" },
+]
+mojo-compiler = [
+  { index = "modular-nightly" },
+]
+mojo-lldb-libs = [
+  { index = "modular-nightly" },
+]
 torch = [
   { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
 ]
 
 [tool.uv]
+prerelease = "allow"
 
 [tool.poe.tasks]
 tests = "bash solutions/run.sh"
@@ -69,7 +88,6 @@ p17 = [
 ]
 
 p18-package = "mojo package problems/p18/op -o problems/p18/op.mojopkg"
-# FIXME: currently broken for the uv path with the mojo dep changes but is ok with pixi through conda
 p18-test-kernels = { cmd = "mojo test problems/p18", deps = ["p18-package"] }
 p18 = { cmd = "python problems/p18/p18.py", deps = ["p18-package"] }
 
@@ -92,6 +110,21 @@ p25 = "mojo problems/p25/p25.mojo"
 
 p26 = "mojo problems/p26/p26.mojo"
 
+p27 = "mojo problems/p27/p27.mojo"
+
 p28 = "mojo problems/p28/p28.mojo"
 
 p29 = "mojo problems/p29/p29.mojo"
+
+p30 = "mojo problems/p30/p30.mojo"
+
+p31 = "mojo problems/p31/p31.mojo"
+
+p32 = "mojo problems/p32/p32.mojo"
+
+p33 = "mojo problems/p33/p33.mojo"
+
+p34 = "mojo problems/p34/p34.mojo"
+
+# GPU specs
+gpu-specs = { cmd = "python scripts/gpu_specs.py" }

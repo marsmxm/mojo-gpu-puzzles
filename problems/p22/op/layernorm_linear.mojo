@@ -10,48 +10,81 @@ from runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
 from utils import StaticTuple
 
+alias MATMUL_BLOCK_DIM_XY = 16  # Square blocks for a, b and output
+alias MATMUL_NUM_THREADS = MATMUL_BLOCK_DIM_XY * MATMUL_BLOCK_DIM_XY
+alias MATMUL_BLOCK_DIM_COUNT = 2
+alias TRANSPOSE_BLOCK_DIM_XY = 16  # Square blocks for input and output
 alias TPB = 16
 alias dtype = DType.float32
 
 
 # ANCHOR: matmul_idiomatic_tiled
-# Idiomatic tiled matmul from p14.mojo - adapted for [batch*seq, hidden] @ [hidden, output] -> [batch*seq, output]
+# Idiomatic tiled matmul from p19.mojo
 fn matmul_idiomatic_tiled[
     a_layout: Layout,
     b_layout: Layout,
     out_layout: Layout,
     rows: Int,
     cols: Int,
-    inner_dim: Int,
+    inner: Int,
+    dtype: DType = DType.float32,
 ](
-    output: LayoutTensor[mut=True, dtype, out_layout],
-    a: LayoutTensor[mut=False, dtype, a_layout],
-    b: LayoutTensor[mut=False, dtype, b_layout],
+    output: LayoutTensor[mut=False, dtype, out_layout, MutableAnyOrigin],
+    a: LayoutTensor[mut=False, dtype, a_layout, MutableAnyOrigin],
+    b: LayoutTensor[mut=False, dtype, b_layout, MutableAnyOrigin],
 ):
-    """Idiomatic tiled matmul following p14.mojo exactly."""
-    local_row = thread_idx.x
-    local_col = thread_idx.y
-    tiled_row = block_idx.y * TPB + local_row
-    tiled_col = block_idx.x * TPB + local_col
+    """Idiomatic tiled matrix multiplication from p19."""
+    local_row = thread_idx.y
+    local_col = thread_idx.x
+    tiled_row = block_idx.y * MATMUL_BLOCK_DIM_XY + local_row
+    tiled_col = block_idx.x * MATMUL_BLOCK_DIM_XY + local_col
 
     # Get the tile of the output matrix that this thread block is responsible for
-    out_tile = output.tile[TPB, TPB](block_idx.x, block_idx.y)
-    a_shared = tb[dtype]().row_major[TPB, TPB]().shared().alloc().fill(0)
-    b_shared = tb[dtype]().row_major[TPB, TPB]().shared().alloc().fill(0)
-
+    out_tile = output.tile[MATMUL_BLOCK_DIM_XY, MATMUL_BLOCK_DIM_XY](
+        block_idx.y, block_idx.x
+    )
+    a_shared = (
+        tb[dtype]()
+        .row_major[MATMUL_BLOCK_DIM_XY, MATMUL_BLOCK_DIM_XY]()
+        .shared()
+        .alloc()
+    )
+    b_shared = (
+        tb[dtype]()
+        .row_major[MATMUL_BLOCK_DIM_XY, MATMUL_BLOCK_DIM_XY]()
+        .shared()
+        .alloc()
+    )
     var acc: output.element_type = 0
 
-    alias load_a_layout = Layout.row_major(1, TPB)
-    alias load_b_layout = Layout.row_major(TPB, 1)
+    alias load_a_layout = Layout.row_major(
+        MATMUL_BLOCK_DIM_XY, MATMUL_BLOCK_DIM_XY
+    )  # Coalesced loading
+    alias load_b_layout = Layout.row_major(
+        MATMUL_BLOCK_DIM_XY, MATMUL_BLOCK_DIM_XY
+    )  # Coalesced loading
 
-    for idx in range((inner_dim + TPB - 1) // TPB):
+    @parameter
+    for idx in range((inner + MATMUL_BLOCK_DIM_XY - 1) // MATMUL_BLOCK_DIM_XY):
         # Get tiles from A and B matrices
-        a_tile = a.tile[TPB, TPB](block_idx.x, idx)
-        b_tile = b.tile[TPB, TPB](idx, block_idx.y)
+        a_tile = a.tile[MATMUL_BLOCK_DIM_XY, MATMUL_BLOCK_DIM_XY](
+            block_idx.y, idx
+        )
+        b_tile = b.tile[MATMUL_BLOCK_DIM_XY, MATMUL_BLOCK_DIM_XY](
+            idx, block_idx.x
+        )
 
-        # Asynchronously copy tiles to shared memory
-        copy_dram_to_sram_async[thread_layout=load_a_layout](a_shared, a_tile)
-        copy_dram_to_sram_async[thread_layout=load_b_layout](b_shared, b_tile)
+        # Asynchronously copy tiles to shared memory with consistent orientation
+        copy_dram_to_sram_async[
+            thread_layout=load_a_layout,
+            num_threads=MATMUL_NUM_THREADS,
+            block_dim_count=MATMUL_BLOCK_DIM_COUNT,
+        ](a_shared, a_tile)
+        copy_dram_to_sram_async[
+            thread_layout=load_b_layout,
+            num_threads=MATMUL_NUM_THREADS,
+            block_dim_count=MATMUL_BLOCK_DIM_COUNT,
+        ](b_shared, b_tile)
 
         # Wait for all async copies to complete
         async_copy_wait_all()
@@ -59,8 +92,14 @@ fn matmul_idiomatic_tiled[
 
         # Compute partial matrix multiplication for this tile
         @parameter
-        for k in range(TPB):
-            acc += a_shared[local_row, k] * b_shared[k, local_col]
+        for k in range(MATMUL_BLOCK_DIM_XY):
+            if (
+                tiled_row < rows and tiled_col < cols
+            ):  # Only perform calculation for valid outputs
+                if k < a_tile.dim(
+                    1
+                ):  # Only perform calculation on valid inputs
+                    acc += a_shared[local_row, k] * b_shared[k, local_col]
 
         barrier()
 
@@ -113,30 +152,34 @@ fn transpose_kernel[
     layout_out: Layout,
     rows: Int,
     cols: Int,
+    dtype: DType = DType.float32,
 ](
-    output: LayoutTensor[mut=True, dtype, layout_out],
-    input: LayoutTensor[mut=False, dtype, layout_in],
+    output: LayoutTensor[mut=True, dtype, layout_out, MutableAnyOrigin],
+    inp: LayoutTensor[mut=False, dtype, layout_in, MutableAnyOrigin],
 ):
     """Transpose matrix using shared memory tiling for coalesced access.
     We will learn more about coalesced access in the next part.
     """
-    shared_tile = tb[dtype]().row_major[TPB, TPB]().shared().alloc()
+    shared_tile = (
+        tb[dtype]()
+        .row_major[TRANSPOSE_BLOCK_DIM_XY, TRANSPOSE_BLOCK_DIM_XY]()
+        .shared()
+        .alloc()
+    )
 
     local_row = thread_idx.y
     local_col = thread_idx.x
 
-    global_row = block_idx.y * TPB + local_row
-    global_col = block_idx.x * TPB + local_col
+    global_row = block_idx.y * TRANSPOSE_BLOCK_DIM_XY + local_row
+    global_col = block_idx.x * TRANSPOSE_BLOCK_DIM_XY + local_col
 
     if global_row < rows and global_col < cols:
-        shared_tile[local_row, local_col] = input[global_row, global_col]
-    else:
-        shared_tile[local_row, local_col] = 0.0
+        shared_tile[local_row, local_col] = inp[global_row, global_col]
 
     barrier()
 
-    out_row = block_idx.x * TPB + local_row
-    out_col = block_idx.y * TPB + local_col
+    out_row = block_idx.x * TRANSPOSE_BLOCK_DIM_XY + local_row
+    out_col = block_idx.y * TRANSPOSE_BLOCK_DIM_XY + local_col
 
     # Store data from shared memory to global memory (coalesced write)
     # Note: we transpose the shared memory access pattern
@@ -400,8 +443,12 @@ struct LayerNormLinearCustomOp:
                 ](transposed_weight_buffer.unsafe_ptr())
 
                 # Transpose the weight matrix
-                transpose_blocks_x = (hidden_dim + TPB - 1) // TPB
-                transpose_blocks_y = (output_dim + TPB - 1) // TPB
+                transpose_blocks_x = (
+                    hidden_dim + TRANSPOSE_BLOCK_DIM_XY - 1
+                ) // TRANSPOSE_BLOCK_DIM_XY
+                transpose_blocks_y = (
+                    output_dim + TRANSPOSE_BLOCK_DIM_XY - 1
+                ) // TRANSPOSE_BLOCK_DIM_XY
                 gpu_ctx.enqueue_function[
                     transpose_kernel[
                         weight_layout,
@@ -413,7 +460,7 @@ struct LayerNormLinearCustomOp:
                     transposed_weight_tensor,
                     linear_weight_tensor,
                     grid_dim=(transpose_blocks_x, transpose_blocks_y),
-                    block_dim=(TPB, TPB),
+                    block_dim=(TRANSPOSE_BLOCK_DIM_XY, TRANSPOSE_BLOCK_DIM_XY),
                 )
 
                 # Reshape tensors for matmul: [batch*seq, hidden] @ [hidden, output] -> [batch*seq, output]

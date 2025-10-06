@@ -2,15 +2,16 @@
 
 ## Overview
 
-Welcome to **Puzzle 25: Warp Communication Primitives**! This puzzle introduces you to advanced GPU **warp-level communication operations** - hardware-accelerated primitives that enable efficient data exchange and coordination patterns within warps. You'll learn about using [shuffle_down](https://docs.modular.com/mojo/stdlib/gpu/warp/shuffle_down) and [broadcast](https://docs.modular.com/mojo/stdlib/gpu/warp/broadcast) to implement neighbor communication and collective coordination without complex shared memory patterns.
+**Puzzle 25: Warp Communication Primitives** introduces advanced GPU **warp-level communication operations** - hardware-accelerated primitives that enable efficient data exchange and coordination patterns within warps. You'll learn about using [shuffle_down](https://docs.modular.com/mojo/stdlib/gpu/warp/shuffle_down) and [broadcast](https://docs.modular.com/mojo/stdlib/gpu/warp/broadcast) to implement neighbor communication and collective coordination without complex shared memory patterns.
 
-**What you'll achieve:** Transform from complex shared memory + indexing + boundary checking patterns to elegant warp communication calls that leverage hardware-optimized data movement.
+**Part VII: GPU Warp Communication** introduces warp-level data movement operations within thread groups. You'll learn to replace complex shared memory + indexing + boundary checking patterns with efficient warp communication calls that leverage hardware-optimized data movement.
 
-**Key insight:** _GPU warps execute in lockstep - Mojo's warp communication operations harness this synchronization to provide powerful data exchange primitives with automatic boundary handling and zero explicit synchronization._
+**Key insight:** _GPU warps execute in lockstep - Mojo's warp communication operations use this synchronization to provide efficient data exchange primitives with automatic boundary handling and zero explicit synchronization._
 
 ## What you'll learn
 
 ### **Warp communication model**
+
 Understand the fundamental communication patterns within GPU warps:
 
 ```
@@ -26,13 +27,15 @@ Lane 0 ──broadcast──> All lanes (0, 1, 2, ..., 31)
 ```
 
 **Hardware reality:**
+
 - **Register-to-register communication**: Data moves directly between thread registers
 - **Zero memory overhead**: No shared memory allocation required
 - **Automatic boundary handling**: Hardware manages warp edge cases
 - **Single-cycle operations**: Communication happens in one instruction cycle
 
 ### **Warp communication operations in Mojo**
-Master the core communication primitives from `gpu.warp`:
+
+Learn the core communication primitives from `gpu.warp`:
 
 1. **[`shuffle_down(value, offset)`](https://docs.modular.com/mojo/stdlib/gpu/warp/shuffle_down)**: Get value from lane at higher index (neighbor access)
 2. **[`broadcast(value)`](https://docs.modular.com/mojo/stdlib/gpu/warp/broadcast)**: Share lane 0's value with all other lanes (one-to-many)
@@ -42,6 +45,7 @@ Master the core communication primitives from `gpu.warp`:
 > **Note:** This puzzle focuses on `shuffle_down()` and `broadcast()` as the most commonly used communication patterns. For complete coverage of all warp operations, see the [Mojo GPU Warp Documentation](https://docs.modular.com/mojo/stdlib/gpu/warp/).
 
 ### **Performance transformation example**
+
 ```mojo
 # Complex neighbor access pattern (traditional approach):
 shared = tb[dtype]().row_major[WARP_SIZE]().shared().alloc()
@@ -64,6 +68,7 @@ else:
 ```
 
 ### **When warp communication excels**
+
 Learn the performance characteristics:
 
 | Communication Pattern | Traditional | Warp Operations |
@@ -76,6 +81,7 @@ Learn the performance characteristics:
 ## Prerequisites
 
 Before diving into warp communication, ensure you're comfortable with:
+
 - **Part VII warp fundamentals**: Understanding SIMT execution and basic warp operations (see [Puzzle 24](../puzzle_24/puzzle_24.md))
 - **GPU thread hierarchy**: Blocks, warps, and lane numbering
 - **LayoutTensor operations**: Loading, storing, and tensor manipulation
@@ -84,17 +90,20 @@ Before diving into warp communication, ensure you're comfortable with:
 ## Learning path
 
 ### **1. Neighbor communication with shuffle_down**
+
 **→ [Warp Shuffle Down](./warp_shuffle_down.md)**
 
-Master neighbor-based communication patterns for stencil operations and finite differences.
+Learn neighbor-based communication patterns for stencil operations and finite differences.
 
-**What you'll master:**
+**What you'll learn:**
+
 - Using `shuffle_down()` for accessing adjacent lane data
 - Implementing finite differences and moving averages
 - Handling warp boundaries automatically
 - Multi-offset shuffling for extended neighbor access
 
 **Key pattern:**
+
 ```mojo
 current_val = input[global_i]
 next_val = shuffle_down(current_val, 1)
@@ -103,17 +112,20 @@ if lane < WARP_SIZE - 1:
 ```
 
 ### **2. Collective coordination with broadcast**
+
 **→ [Warp Broadcast](./warp_broadcast.md)**
 
-Master one-to-many communication patterns for block-level coordination and collective decision-making.
+Learn one-to-many communication patterns for block-level coordination and collective decision-making.
 
-**What you'll master:**
+**What you'll learn:**
+
 - Using `broadcast()` for sharing computed values across lanes
 - Implementing block-level statistics and collective decisions
 - Combining broadcast with conditional logic
 - Advanced broadcast-shuffle coordination patterns
 
 **Key pattern:**
+
 ```mojo
 var shared_value = 0.0
 if lane == 0:
@@ -125,21 +137,27 @@ result = use_shared_value(shared_value, local_data)
 ## Key concepts
 
 ### **Communication patterns**
+
 Understanding fundamental warp communication paradigms:
+
 - **Neighbor communication**: Lane-to-adjacent-lane data exchange
 - **Collective coordination**: One-lane-to-all-lanes information sharing
 - **Stencil operations**: Accessing fixed patterns of neighboring data
 - **Boundary handling**: Managing communication at warp edges
 
 ### **Hardware optimization**
+
 Recognizing how warp communication maps to GPU hardware:
+
 - **Register file communication**: Direct inter-thread register access
 - **SIMT execution**: All lanes execute communication simultaneously
 - **Zero latency**: Communication happens within the execution unit
 - **Automatic synchronization**: No explicit barriers needed
 
 ### **Algorithm transformation**
+
 Converting traditional parallel patterns to warp communication:
+
 - **Array neighbor access** → `shuffle_down()`
 - **Shared memory coordination** → `broadcast()`
 - **Complex boundary logic** → Hardware-handled edge cases
@@ -147,10 +165,10 @@ Converting traditional parallel patterns to warp communication:
 
 ## Getting started
 
-Ready to harness GPU warp-level communication? Start with neighbor-based shuffle operations to understand the foundation, then progress to collective broadcast patterns for advanced coordination.
+Start with neighbor-based shuffle operations to understand the foundation, then progress to collective broadcast patterns for advanced coordination.
 
 💡 **Success tip**: Think of warp communication as **hardware-accelerated message passing** between threads in the same warp. This mental model will guide you toward efficient communication patterns that leverage the GPU's SIMT architecture.
 
 **Learning objective**: By the end of Puzzle 25, you'll recognize when warp communication can replace complex shared memory patterns, enabling you to write simpler, faster neighbor-based and coordination algorithms.
 
-**Ready to begin?** Start with **[Warp Shuffle Down Operations](./warp_shuffle_down.md)** to master neighbor communication, then advance to **[Warp Broadcast Operations](./warp_broadcast.md)** for collective coordination patterns!
+**Begin with**: **[Warp Shuffle Down Operations](./warp_shuffle_down.md)** to learn neighbor communication, then advance to **[Warp Broadcast Operations](./warp_broadcast.md)** for collective coordination patterns.

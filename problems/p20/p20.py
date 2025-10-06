@@ -1,12 +1,15 @@
 from typing import Optional
 from pathlib import Path
 import numpy as np
+
 # ANCHOR: conv1d_pytorch
 import torch
 from max.torch import CustomOpLibrary
 
 
-def conv1d_pytorch(input_tensor: torch.Tensor, kernel_tensor: torch.Tensor) -> torch.Tensor:
+def conv1d_pytorch(
+    input_tensor: torch.Tensor, kernel_tensor: torch.Tensor
+) -> torch.Tensor:
     """
     1D convolution using our custom PyTorch operation.
 
@@ -22,18 +25,25 @@ def conv1d_pytorch(input_tensor: torch.Tensor, kernel_tensor: torch.Tensor) -> t
 
     # Call our custom conv1d operation with explicit output tensor
     # The Mojo signature expects: (out, input, kernel)
-    conv1d = ops.conv1d[{"input_size": input_tensor.shape[0], "conv_size": kernel_tensor.shape[0]}]
+    conv1d = ops.conv1d[
+        {
+            "input_size": input_tensor.shape[0],
+            "conv_size": kernel_tensor.shape[0],
+        }
+    ]
 
     # FILL IN with 1 line of code
 
     return output_tensor
 
+
 # ANCHOR_END: conv1d_pytorch
+
 
 def conv1d_max_graph_reference(
     input_array: np.ndarray,
     kernel_array: np.ndarray,
-    device: Optional[str] = None
+    device: Optional[str] = None,
 ) -> np.ndarray:
     """
     Reference implementation using MAX Graph (like p15) for comparison.
@@ -60,8 +70,16 @@ def conv1d_max_graph_reference(
     with Graph(
         "conv_1d_reference_graph",
         input_types=[
-            TensorType(DType.float32, shape=input_tensor.shape, device=DeviceRef.from_device(device_obj)),
-            TensorType(DType.float32, shape=kernel_tensor.shape, device=DeviceRef.from_device(device_obj)),
+            TensorType(
+                DType.float32,
+                shape=input_tensor.shape,
+                device=DeviceRef.from_device(device_obj),
+            ),
+            TensorType(
+                DType.float32,
+                shape=kernel_tensor.shape,
+                device=DeviceRef.from_device(device_obj),
+            ),
         ],
         custom_extensions=[Path(__file__).parent / "op"],
     ) as graph:
@@ -70,11 +88,13 @@ def conv1d_max_graph_reference(
             name="conv1d",
             values=[input_value, kernel_value],
             device=DeviceRef.from_device(device_obj),
-            out_types=[TensorType(
-                dtype=input_value.tensor.dtype,
-                shape=input_value.tensor.shape,
-                device=DeviceRef.from_device(device_obj),
-            )],
+            out_types=[
+                TensorType(
+                    dtype=input_value.tensor.dtype,
+                    shape=input_value.tensor.shape,
+                    device=DeviceRef.from_device(device_obj),
+                )
+            ],
             parameters={
                 "input_size": input_tensor.shape[0],
                 "conv_size": kernel_tensor.shape[0],
@@ -88,7 +108,9 @@ def conv1d_max_graph_reference(
     return result.to(CPU()).to_numpy()
 
 
-def compute_numpy_reference(input_array: np.ndarray, kernel_array: np.ndarray) -> np.ndarray:
+def compute_numpy_reference(
+    input_array: np.ndarray, kernel_array: np.ndarray
+) -> np.ndarray:
     """NumPy reference implementation for verification."""
     INPUT_SIZE = len(input_array)
     KERNEL_SIZE = len(kernel_array)
@@ -154,7 +176,9 @@ if __name__ == "__main__":
         print("✅ MAX Graph verification PASSED")
 
         if pytorch_result_cpu is not None:
-            np.testing.assert_allclose(pytorch_result_cpu, max_graph_result, rtol=1e-5)
+            np.testing.assert_allclose(
+                pytorch_result_cpu, max_graph_result, rtol=1e-5
+            )
             print("✅ PyTorch and MAX Graph results MATCH")
 
     except Exception as e:
@@ -163,6 +187,8 @@ if __name__ == "__main__":
     print()
     print("Key Learning Points:")
     print("• Same Mojo kernel works for both MAX Graph and PyTorch")
-    print("• PyTorch CustomOpLibrary requires explicit output tensor allocation")
+    print(
+        "• PyTorch CustomOpLibrary requires explicit output tensor allocation"
+    )
     print("• Both approaches call the exact same optimized GPU kernel")
     print("• PyTorch tensors can stay on GPU throughout the computation")

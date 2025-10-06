@@ -51,8 +51,8 @@ def main():
         b = ctx.enqueue_create_buffer[dtype](SIZE).enqueue_fill(0)
         with a.map_to_host() as a_host, b.map_to_host() as b_host:
             for i in range(SIZE):
-                a_host[i] = i
-                b_host[i] = i
+                a_host[i] = i + 1
+                b_host[i] = i * 10
 
             for i in range(SIZE):
                 for j in range(SIZE):

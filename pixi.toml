@@ -2,41 +2,46 @@
 authors = ["Modular <hello@modular.com>"]
 channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
 name = "mojo-gpu-puzzles"
-platforms = ["linux-64"]
-version = "0.0.0"
+platforms = ["linux-64", "osx-arm64"]
+version = "1.0.0"
 
-[feature.cuda]
+[feature.nvidia]
 system-requirements = { cuda = "12" }
 channels = ["nvidia"]
 
-[feature.cuda.dependencies]
+[feature.nvidia.target.linux-64.dependencies]
 cuda-toolkit = "12.*" # for compute-sanitizer etc.
 cuda-gdb = "12.*"     # for GPU kernel debugging
+nsight-compute = "*"  # interactive kernel profiling
 
-[feature.cuda.pypi-dependencies]
+[feature.nvidia.target.linux-64.pypi-dependencies]
 torch = { version = "==2.7.1", index = "https://download.pytorch.org/whl/cu128" }
+nvidia-ml-py = "*"
 
-[feature.rocm]
+[feature.amd]
 system-requirements = {}
 
-[feature.rocm.pypi-dependencies]
+[feature.amd.target.linux-64.pypi-dependencies]
 torch = { version = "==2.7.1", index = "https://download.pytorch.org/whl/rocm6.3" }
 pytorch-triton-rocm = {version = "*", index = "https://download.pytorch.org/whl/rocm6.3" }
 
+[feature.apple]
+system-requirements = { macos = "15.0" }
+
 [dependencies]
 python = "==3.12"
-max = "*"  # includes `mojo-compiler`
-mojo = "*" # includes lsp, debugger, formatter etc.
+mojo = "<1.0.0" # includes `mojo-compiler`, lsp, debugger, formatter etc.
+max = "*"
 bash = ">=5.2.21,<6"
 manim = ">=0.18.1,<0.19"
 mdbook = ">=0.4.48,<0.5"
 pre-commit = ">=4.2.0,<5"
 
-
 [environments]
-cuda = { features = ["cuda"], solve-group = "cuda" }
-rocm = { features = ["rocm"], solve-group = "rocm" }
-default = { features = ["cuda"] }
+nvidia = { features = ["nvidia"], solve-group = "nvidia" }
+amd = { features = ["amd"], solve-group = "amd" }
+apple = { features = ["apple"], solve-group = "apple" }
+default = { features = ["nvidia"] }
 
 [tasks]
 install-pre-commit = "pre-commit install"
@@ -47,11 +52,12 @@ tests = { cmd = "bash solutions/run.sh" }
 # Fix conda cuda-gdb by linking to system CUDA installation
 setup-cuda-gdb = { cmd = "ln -sf /usr/local/cuda/bin/cuda-gdb-minimal $CONDA_PREFIX/bin/cuda-gdb-minimal && ln -sf /usr/local/cuda/bin/cuda-gdb-python3.12-tui $CONDA_PREFIX/bin/cuda-gdb-python3.12-tui", description = "Link system CUDA-GDB binaries to conda environment" }
 
-memcheck = { cmd = "bash solutions/sanitizer.sh memcheck" }
-racecheck = { cmd = "bash solutions/sanitizer.sh racecheck" }
-synccheck = { cmd = "bash solutions/sanitizer.sh synccheck" }
-initcheck = { cmd = "bash solutions/sanitizer.sh initcheck" }
-sanitizers = { cmd = "bash solutions/sanitizer.sh all" }
+set-buffer-cache = { cmd = "export MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE_PERCENT=0" }
+memcheck = { cmd = "bash solutions/sanitizer.sh memcheck", depends-on = ["set-buffer-cache"] }
+racecheck = { cmd = "bash solutions/sanitizer.sh racecheck", depends-on = ["set-buffer-cache"] }
+synccheck = { cmd = "bash solutions/sanitizer.sh synccheck", depends-on = ["set-buffer-cache"] }
+initcheck = { cmd = "bash solutions/sanitizer.sh initcheck", depends-on = ["set-buffer-cache"] }
+sanitizers = { cmd = "bash solutions/sanitizer.sh all", depends-on = ["set-buffer-cache"] }
 
 build-book = "cd book && mdbook build"
 book = { cmd = "cd book && mdbook serve --open", depends-on = ["build-book"] }
@@ -88,6 +94,8 @@ p08_layout_tensor = "mojo problems/p08/p08_layout_tensor.mojo"
 viz08 = "cd book/src/puzzle_08 && python puzzle_08_viz.py"
 
 p09 = "mojo problems/p09/p09.mojo"
+
+p10 = "mojo problems/p10/p10.mojo"
 
 p11 = "mojo problems/p11/p11.mojo"
 p11_layout_tensor = "mojo problems/p11/p11_layout_tensor.mojo"
@@ -132,8 +140,32 @@ p25 = "mojo problems/p25/p25.mojo"
 
 p26 = "mojo problems/p26/p26.mojo"
 
+p27 = "mojo problems/p27/p27.mojo"
+
 p28 = "mojo problems/p28/p28.mojo"
+
 p29 = "mojo problems/p29/p29.mojo"
+
+p30 = "mojo problems/p30/p30.mojo"
+
+p31 = "mojo problems/p31/p31.mojo"
+
+p32 = "mojo problems/p32/p32.mojo"
+
+p33 = "mojo problems/p33/p33.mojo"
+
+p34 = "mojo problems/p34/p34.mojo"
+
+# NVIDIA GPU information and profiling utilities
+gpu-info = { cmd = "nvidia-smi --query-gpu=name,compute_cap,memory.total,driver_version --format=csv", description = "Get basic GPU information" }
+
+# GPU specs
+gpu-specs = { cmd = "python3 scripts/gpu_specs.py", description = "Get complete GPU architectural specifications (NVIDIA/AMD/Apple Silicon)" }
+
+# macOS
+check-macos = { cmd = "sw_vers -productVersion | awk -F. '{if($1<15) {print \"Error: macOS 15+ required, found \" $0; exit 1}}'", description = "Ensure macOS 15+" }
 
 generate-animations = { cmd = "echo 'All animations generated!'", depends-on = ["viz01", "viz02", "viz03", "viz04", "viz05", "viz06", "viz07", "viz08", "viz11", "viz12", "viz13", "viz14", "viz15", "viz16", "rooflineviz", "thread_indexing"] }
 clean-animations = "find book/src -type d -name media | xargs rm -rf"
+clean-profiles = "bash -c 'find . -maxdepth 1 -type f \\( -name \"*.sqlite\" -o -name \"*.txt\" -o -name \"*.nsys-rep\" -o -name \"*.ncu-rep\" \\) -delete && find problems -type f \\( -name \"*.sqlite\" -o -name \"*.txt\" -o -name \"*.nsys-rep\" -o -name \"*.ncu-rep\" \\) -delete'"
+clean-all = { cmd = "cleanup is done!", depends-on = ["clean-animations", "clean-profiles"] }

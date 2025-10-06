@@ -85,13 +85,15 @@ def attention(
     print(f"Compiling attention graph on {device}")
     model = session.load(graph)
     print(f"Executing attention on {device}")
-    print("="*100)
+    print("=" * 100)
     result = model.execute(q_tensor, k_tensor, v_tensor)[0]
     assert isinstance(result, Tensor)
     return result.to(CPU()) if device == Accelerator() else result
 
 
-def reference_attention(q: NDArray[np.float32], k: NDArray[np.float32], v: NDArray[np.float32]) -> NDArray[np.float32]:
+def reference_attention(
+    q: NDArray[np.float32], k: NDArray[np.float32], v: NDArray[np.float32]
+) -> NDArray[np.float32]:
     """Reference implementation of vector attention using NumPy."""
     scores = np.dot(k, q)
     scores_max = np.max(scores)
@@ -101,11 +103,13 @@ def reference_attention(q: NDArray[np.float32], k: NDArray[np.float32], v: NDArr
     return output
 
 
-def debug_attention_steps(q: NDArray[np.float32], k: NDArray[np.float32], v: NDArray[np.float32]):
+def debug_attention_steps(
+    q: NDArray[np.float32], k: NDArray[np.float32], v: NDArray[np.float32]
+):
     """Debug vector attention computation step by step."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("STEP-BY-STEP VECTOR ATTENTION COMPUTATION DEBUG")
-    print("="*80)
+    print("=" * 80)
 
     seq_len, d = k.shape
     print(f"\n1. INPUT SHAPES:")
@@ -125,7 +129,10 @@ def debug_attention_steps(q: NDArray[np.float32], k: NDArray[np.float32], v: NDA
     print(f"   Manual verification:")
     for i in range(min(3, seq_len)):
         manual_score = np.dot(q, k[i])  # Q · K[i] = K[i] · Q
-        print(f"     Q · K[{i}] = K[{i}] · Q = {manual_score:.6f} (computed: {scores[i]:.6f})")
+        print(
+            f"     Q · K[{i}] = K[{i}] · Q = {manual_score:.6f} (computed:"
+            f" {scores[i]:.6f})"
+        )
 
     # Step 2: Softmax on the scores
     scores_max = np.max(scores)
@@ -152,9 +159,9 @@ def debug_attention_steps(q: NDArray[np.float32], k: NDArray[np.float32], v: NDA
     print(f"   Match: {np.allclose(output, manual_output)}")
 
     return {
-        'scores': scores,
-        'attention_weights': attention_weights,
-        'output': output
+        "scores": scores,
+        "attention_weights": attention_weights,
+        "output": output,
     }
 
 
@@ -173,9 +180,9 @@ def test_individual_operations():
 
     # Test 2: Matrix-vector multiplication
     print("\nTest 2: Matrix-Vector Multiplication")
-    M = np.array([[1, 2, 3, 4],
-                  [5, 6, 7, 8],
-                  [9, 10, 11, 12]], dtype=np.float32)
+    M = np.array(
+        [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]], dtype=np.float32
+    )
     v = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
     expected_mv = np.dot(M, v)
     print(f"M @ v = {expected_mv}")
@@ -192,8 +199,8 @@ def test_individual_operations():
 
 
 if __name__ == "__main__":
-    SEQ_LEN = 16  # Number of key/value vectors
-    D = 16  # Dimension of each vector
+    SEQ_LEN = 16  # Number of key/value vectors, must be equal to SEQ_LEN in attention.mojo
+    D = 16  # Dimension of each vector, must be equal to D in attention.mojo
 
     cpu_session = InferenceSession(devices=[CPU()])
     gpu_session = InferenceSession(devices=[Accelerator()])
@@ -210,7 +217,7 @@ if __name__ == "__main__":
 
     # Debug step-by-step computation
     numpy_steps = debug_attention_steps(q, k, v)
-    expected_result = numpy_steps['output']
+    expected_result = numpy_steps["output"]
 
     # Test individual operations first
     test_individual_operations()
@@ -223,7 +230,10 @@ if __name__ == "__main__":
     cpu_result = attention(q, k, v, cpu_session, CPU())
     cpu_array = cpu_result.to_numpy()
     print(f"\nCPU attention output[:5]: {cpu_array[:5]}")
-    print(f"CPU matches NumPy: {np.allclose(cpu_array, expected_result, rtol=1e-4, atol=1e-4)}")
+    print(
+        "CPU matches NumPy:"
+        f" {np.allclose(cpu_array, expected_result, rtol=1e-4, atol=1e-4)}"
+    )
     if not np.allclose(cpu_array, expected_result, rtol=1e-4, atol=1e-4):
         diff = np.abs(cpu_array - expected_result)
         print(f"Max CPU diff: {np.max(diff):.6f}")
@@ -234,7 +244,10 @@ if __name__ == "__main__":
     gpu_array = gpu_result.to_numpy()
     print(f"\nGPU attention output[:5]: {gpu_array[:5]}")
     print(f"Expected output[:5]: {expected_result[:5]}")
-    print(f"GPU matches NumPy: {np.allclose(gpu_array, expected_result, rtol=1e-4, atol=1e-4)}")
+    print(
+        "GPU matches NumPy:"
+        f" {np.allclose(gpu_array, expected_result, rtol=1e-4, atol=1e-4)}"
+    )
     if not np.allclose(gpu_array, expected_result, rtol=1e-4, atol=1e-4):
         diff = np.abs(gpu_array - expected_result)
         print(f"Max GPU diff: {np.max(diff):.6f}")
@@ -252,14 +265,18 @@ if __name__ == "__main__":
     print(f"{'='*80}")
 
     try:
-        np.testing.assert_allclose(cpu_array, expected_result, rtol=1e-4, atol=1e-4)
+        np.testing.assert_allclose(
+            cpu_array, expected_result, rtol=1e-4, atol=1e-4
+        )
         print("✓ CPU implementation PASSED")
     except AssertionError as e:
         print("✗ CPU implementation FAILED")
         print(str(e))
 
     try:
-        np.testing.assert_allclose(gpu_array, expected_result, rtol=1e-4, atol=1e-4)
+        np.testing.assert_allclose(
+            gpu_array, expected_result, rtol=1e-4, atol=1e-4
+        )
         print("✓ GPU implementation PASSED")
     except AssertionError as e:
         print("✗ GPU implementation FAILED")
